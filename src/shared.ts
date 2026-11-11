@@ -75,12 +75,15 @@ export interface SourceAnalysis {
   scanType: 'Progressive' | 'Interlaced' | 'Unknown';
   fieldOrder: string;
   variableFrameRate: boolean;
-  frameTiming?: FrameTimingEvidence;
   scanEvidence?: ScanEvidence;
-  decodeIssue?: string;
-  freezeSample?: string;
-  openingIssue?: string;
+  frameTiming?: FrameTimingEvidence;
   scanSample?: string;
+  decodeIssue?: string;
+  openingIssue?: string;
+  freezeSample?: string;
+  banding?: number;
+  bandingNote?: string;
+  noise?: number;
   qualitySummary: string;
 }
 
@@ -337,8 +340,18 @@ export function sourceGuidanceItems(analysis: SourceAnalysis): SourceGuidanceIte
   const colorTags = `Transfer ${analysis.colorTransfer || 'unknown'}; primaries ${analysis.colorPrimaries || 'unknown'}; matrix ${analysis.colorSpace || 'unknown'}; range ${analysis.colorRange || 'unknown'}; chroma ${analysis.chromaLocation || 'unknown'}.`;
   items.push({ title: analysis.hdr === 'Unknown' ? 'Color tags incomplete' : analysis.hdr, confidence: analysis.hdr === 'Unknown' ? 'Low' : 'High', evidence: colorTags, recommendation: analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG' ? `Use ${analysis.hdr} tone mapping for an SDR master.` : /601|smpte170m/i.test(analysis.colorSpace) ? 'Convert explicit Rec.601 matrix tags to Rec.709 for an HD SDR master.' : analysis.hdr === 'Unknown' ? 'Keep color treatment conservative and verify rather than assuming Rec.709.' : 'Keep SDR color unless the image visibly indicates bad or missing tags.', check: 'Review skin tones, neutral grays, shadows, and highlight roll-off.' });
   if (analysis.decodeIssue) items.push({ title: 'Sample decode warning', confidence: 'High', evidence: analysis.decodeIssue, recommendation: 'Do not treat freeze detection as corruption. Recheck the source or run a full decode-integrity scan before export.', check: 'Visit the reported regions and look for corruption, stalls, or missing frames.' });
-  if (analysis.freezeSample || analysis.openingIssue) items.push({ title: 'Low-motion section found', confidence: 'Medium', evidence: analysis.freezeSample ?? analysis.openingIssue ?? '', recommendation: 'Treat this as a review marker; intentional stills and title cards are common.', check: 'Play through the sampled region and confirm whether it is intentionally static.' });
-  items.push({ title: 'Detail treatment requires your eyes', confidence: 'High', evidence: 'Resolution and container bitrate do not measure noise, sharpness, blocking, or banding reliably across different scenes.', recommendation: 'Denoise, sharpen, deband, Descale, and motion smoothing stay off until the shot visibly needs them.', check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup.' });
+  const freeze = analysis.freezeSample || analysis.openingIssue;
+  if (freeze) items.push({ title: 'Low-motion section found', confidence: 'Medium', evidence: analysis.freezeSample ?? analysis.openingIssue ?? '', recommendation: 'Treat this as a review marker; intentional stills and title cards are common.', check: 'Play through the sampled region and confirm whether it is intentionally static.' });
+  if (analysis.banding !== undefined || analysis.noise !== undefined) {
+    const measured = [
+      analysis.noise !== undefined ? `noise ${analysis.noise}` : '',
+      analysis.banding !== undefined ? `banding ${analysis.banding}` : '',
+    ].filter(Boolean).join(', ');
+    const recommendation = analysis.banding !== undefined && analysis.banding >= 20 ? 'Strong banding was measured: enable Deband in the recipe.' : analysis.banding !== undefined && analysis.banding >= 8 ? 'Mild banding was measured: enable Deband and confirm against the source.' : analysis.noise !== undefined && analysis.noise >= 12 ? 'High noise was measured: enable Denoise (Balanced).' : analysis.noise !== undefined && analysis.noise >= 8 ? 'Moderate noise was measured: enable Denoise (Fine detail).' : 'The measured noise and banding are low: leave cleanup off and let your eyes decide.';
+    items.push({ title: 'Detail treatment measured', confidence: 'Medium', evidence: `${measured} ${analysis.bandingNote ? `(${analysis.bandingNote})` : ''} from a distributed decode of ${analysis.width}x${analysis.height} frames.`, recommendation, check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup.' });
+  } else {
+    items.push({ title: 'Detail treatment requires your eyes', confidence: 'High', evidence: 'Resolution and container bitrate do not measure noise, sharpness, blocking, or banding reliably across different scenes.', recommendation: 'Denoise, sharpen, deband, Descale, and motion smoothing stay off until the shot visibly needs them.', check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup.' });
+  }
   return items;
 }
 
@@ -355,14 +368,21 @@ export function sourceVerdict(analysis: SourceAnalysis) {
 
 export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipRecipe> {
   const confirmedInterlace = analysis.scanType === 'Interlaced' && analysis.scanEvidence?.classification === 'Interlaced' && analysis.scanEvidence.confidence === 'High';
+  const banding = analysis.banding ?? 0;
+  // Methodology (from the 13 footage-type tutorials): cleanup is only auto-enabled when the
+  // brain's distributed decode measured the defect, so the auto recipe is evidence-based and
+  // never over-processes a clean source.
+  const deband = banding >= 20;
+  const denoise = analysis.noise && analysis.noise >= 12 ? 'Balanced' : analysis.noise && analysis.noise >= 8 ? 'Fine detail' : 'Off';
+  const sharpen = (banding >= 8 && banding < 20) || (analysis.noise && analysis.noise >= 8) ? 'Natural' : 'Off';
   return {
     look: 'Custom',
-    denoise: 'Off',
-    denoiseStrength: 0,
-    sharpen: 'Off',
-    sharpenStrength: 0,
+    denoise,
+    denoiseStrength: denoise === 'Fine detail' ? 0.9 : denoise === 'Balanced' ? 0.8 : 0,
+    sharpen,
+    sharpenStrength: sharpen === 'Natural' ? 0.5 : 0,
     restoration: 'Off',
-    deband: false,
+    deband,
     motion: 'Original',
     deinterlace: confirmedInterlace ? 'Bwdif' : 'Off',
     fieldOrder: /tt|tb/i.test(analysis.fieldOrder) ? 'Top first' : /bb|bt/i.test(analysis.fieldOrder) ? 'Bottom first' : 'Auto',

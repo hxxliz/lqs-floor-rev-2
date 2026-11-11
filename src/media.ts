@@ -1,11 +1,12 @@
 import { app } from 'electron';
 import { access, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, runtimeVersionArguments, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
+import { fileURLToPath } from 'node:url';
+import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, runtimeVersionArguments, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type FrameTimingEvidence, type GuidanceConfidence, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
 
 export interface ProcessingResult {
   engine: 'VapourSynth' | 'FFmpeg compatibility';
@@ -98,6 +99,51 @@ async function verifyPlugins(vspipe: string) {
   }
 }
 
+// Locate the bundled ffprobe + the cf_analysis.py brain script. The brain lives
+// next to the app source (scripts/cf_analysis.py) in dev and is copied into
+// resources/ at build time (see package.json "files").
+function brainPaths() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.join(here, '..', 'scripts', 'cf_analysis.py'),
+    path.join(here, 'scripts', 'cf_analysis.py'),
+    path.join(process.resourcesPath, 'scripts', 'cf_analysis.py'),
+    path.join(app.getAppPath(), 'scripts', 'cf_analysis.py'),
+  ];
+  for (const candidate of candidates) { try { if (existsSync(candidate)) return candidate; } catch { /* keep searching */ } }
+  return candidates[0];
+}
+
+interface BrainResult {
+  scanType?: 'Interlaced' | 'Progressive';
+  scanEvidence?: Record<string, unknown>;
+  frameTiming?: Record<string, unknown>;
+  banding?: number;
+  bandingNote?: string;
+  noise?: number;
+  openingIssue?: string;
+}
+
+// Run the pure-Python pixel-analysis brain (scripts/cf_analysis.py) against the
+// source. It decodes luma frames with ffmpeg and measures interlace comb, luma
+// banding, sensor noise, and telecine cadence — richer than the idet/freezedetect
+// probe — and returns the parts probeMedia should let override its fallback.
+// Best-effort: any failure (missing runtime/python/ffmpeg) returns {} so the
+// ffprobe+idet analysis still stands on its own.
+async function runBrain(sourcePath: string, probe: Record<string, unknown>, signal?: AbortSignal): Promise<BrainResult> {
+  const script = brainPaths();
+  if (!existsSync(script)) return {}; // brain script not present; use the classic probe.
+  try {
+    const { stdout } = await capture('python', [script, '--input', sourcePath, '--probe', JSON.stringify(probe), '--ffmpeg', await executable('ffmpeg')], signal);
+    const parsed = JSON.parse(stdout) as { ok: boolean; error?: string; analysis?: BrainResult };
+    if (!parsed.ok || !parsed.analysis) return {};
+    return parsed.analysis;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return {}; // brain is an enhancement, never a hard dependency.
+  }
+}
+
 export async function getRuntimeStatus(): Promise<RuntimeStatus> {
   const tools = [['ffmpeg', 'ffmpeg'], ['ffprobe', 'ffprobe'], ['vspipe', 'vspipe'], ['ytDlp', 'yt-dlp']] as const;
   const entries = await Promise.all(tools.map(async ([key, name]) => {
@@ -178,7 +224,32 @@ export async function probeMedia(sourcePath: string, signal?: AbortSignal): Prom
     freezeSample: frozenSamples ? `${frozenSamples} of ${scanOutputs.length} sampled windows contained at least one low-motion interval.` : undefined,
     qualitySummary: '',
   };
-  const details = [`${analysis.width}×${analysis.height}`, `${analysis.fps.toFixed(3)} fps`, `${analysis.bitDepth}-bit ${analysis.pixelFormat}`, analysis.hdr, analysis.scanType];
+  // Run the pure-Python pixel-analysis brain: it measures interlace comb,
+  // luma banding, sensor noise, and telecine cadence directly from decoded
+  // luma frames — richer than the idet/freezedetect probe above. Strong
+  // evidence overrides the metadata-only scan type and upgrades frame timing;
+  // any failure degrades gracefully to the idet/ffprobe analysis.
+  const brain = await runBrain(sourcePath, { duration, fps }, signal);
+  const brainTiming = brain.frameTiming as FrameTimingEvidence | undefined;
+  const brainConfidence = (brain.scanEvidence as Record<string, unknown> | undefined)?.confidence as GuidanceConfidence | undefined;
+  if (brain.scanType === 'Interlaced' && brainConfidence === 'High') {
+    analysis.scanType = 'Interlaced';
+  } else if (brain.scanType === 'Progressive' && brainConfidence === 'High' && analysis.scanType !== 'Interlaced') {
+    analysis.scanType = 'Progressive';
+  }
+  // Frame timing is its own high-confidence signal — merge it independently of
+  // the scan-type verdict (cadence evidence applies even when the scan type
+  // stays as the metadata already reported).
+  if (brainTiming && brainTiming.confidence === 'High') {
+    analysis.frameTiming = brainTiming;
+  }
+  // Carry the brain's measured luma defects onto the analysis so the evidence
+  // recipe (suggestedRecipePatch) and the renderer can act on them. banding is
+  // a 0-255 palette-collapse score, noise a neighbor-diff median.
+  if (typeof brain.banding === 'number') analysis.banding = brain.banding;
+  if (typeof brain.noise === 'number') analysis.noise = brain.noise;
+  if (brain.bandingNote) analysis.bandingNote = brain.bandingNote;
+  const details = [`${analysis.width}×${analysis.height}`, `${analysis.fps.toFixed(3)} fps`, `${analysis.bitDepth}-bit ${analysis.pixelFormat}`, analysis.hdr, analysis.scanType, `banding ${brain.banding ?? 'n/a'}`, `noise ${brain.noise ?? 'n/a'}`];
   analysis.qualitySummary = details.join(' · ');
   return analysis;
 }
