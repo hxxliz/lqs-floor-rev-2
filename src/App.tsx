@@ -29,6 +29,7 @@ import {
   type ExportProgress,
   type ProjectCard,
   type RuntimeStatus,
+  type RenderReceipt,
   type SessionClip,
   type StudioSession,
   type StudioSource,
@@ -712,12 +713,49 @@ interface ProcessProps {
   onFind(): void;
 }
 
+function ReceiptModal({ receipt, onClose }: { receipt: RenderReceipt; onClose(): void }) {
+  const fmt = (n?: number) => n === undefined ? '—' : String(n);
+  return <div className="receipt-overlay" role="dialog" aria-modal="true" aria-label={`Render receipt for ${receipt.clipName}`} onClick={onClose}>
+    <div className="receipt-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="receipt-head"><div><span className="eyebrow">RENDER RECEIPT</span><h2 title={receipt.clipName}>{receipt.clipName}</h2></div><button className="ghost" aria-label="Close receipt" onClick={onClose}>×</button></div>
+      <dl className="receipt-grid">
+        <div><dt>RENDERED</dt><dd>{new Date(receipt.rendered).toLocaleString()}</dd></div>
+        <div><dt>ENGINE</dt><dd>{receipt.engine}</dd>{receipt.fallbackReason && <dd className="receipt-fallback">{receipt.fallbackReason}</dd>}</div>
+        <div><dt>CLIP RANGE</dt><dd>{formatTime(receipt.clipRange.start)} — {formatTime(receipt.clipRange.end)}</dd></div>
+        <div><dt>OUTPUT FORMAT</dt><dd>{receipt.recipe.outputFormat}</dd></div>
+      </dl>
+      <div className="receipt-section"><h3>SOURCE</h3><dl className="receipt-grid">
+        <div><dt>LABEL</dt><dd>{receipt.sourceLabel}</dd></div>
+        <div><dt>PATH</dt><dd className="receipt-path" title={receipt.sourcePath}>{receipt.sourcePath}</dd></div>
+        <div><dt>RESOLUTION</dt><dd>{receipt.source.width}×{receipt.source.height}</dd></div>
+        <div><dt>FPS</dt><dd>{receipt.source.fps}</dd></div>
+        <div><dt>DURATION</dt><dd>{formatTime(receipt.source.duration)}</dd></div>
+        <div><dt>CODEC</dt><dd>{receipt.source.codec}</dd></div>
+        <div><dt>PIXEL FORMAT</dt><dd>{receipt.source.pixelFormat} · {receipt.source.bitDepth}-bit</dd></div>
+        <div><dt>COLOR</dt><dd>{receipt.source.hdr}</dd></div>
+        <div><dt>CADENCE</dt><dd>{receipt.source.scanType} · {receipt.source.fieldOrder}</dd></div>
+        {receipt.source.banding !== undefined && <div><dt>BANDING</dt><dd>{fmt(receipt.source.banding)}</dd></div>}
+        {receipt.source.noise !== undefined && <div><dt>NOISE</dt><dd>{fmt(receipt.source.noise)}</dd></div>}
+      </dl></div>
+      <div className="receipt-section"><h3>OUTPUTS</h3><dl className="receipt-grid">
+        <div><dt>MASTER</dt><dd className="receipt-path" title={receipt.outputs.masterPath}>{receipt.outputs.masterPath}</dd></div>
+        {receipt.outputs.vapourSynthScript && <div><dt>VAPOURSYNTH SCRIPT</dt><dd className="receipt-path" title={receipt.outputs.vapourSynthScript}>{receipt.outputs.vapourSynthScript}</dd></div>}
+        {receipt.outputs.pngFramesFolder && <div><dt>PNG FRAMES</dt><dd className="receipt-path" title={receipt.outputs.pngFramesFolder}>{receipt.outputs.pngFramesFolder}</dd></div>}
+      </dl></div>
+      {receipt.warnings.length > 0 && <div className="receipt-section"><h3>NOTES</h3><ul className="receipt-notes">{receipt.warnings.map((w) => <li key={w}>{w}</li>)}</ul></div>}
+      <p className="receipt-foot">This receipt is the auditable record of the export: the exact source, recipe, engine, and outputs. It is stored as JSON next to the master file.</p>
+    </div>
+  </div>;
+}
+
 function ProcessClips(props: ProcessProps) {
   const [previewSpeed, setPreviewSpeed] = useState(1);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewPosition, setPreviewPosition] = useState(0);
   const [queueCollapsed, setQueueCollapsed] = useState(false);
   const [recipeIndex, setRecipeIndex] = useState(0);
+  const [receipt, setReceipt] = useState<RenderReceipt | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
   const previewVideo = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     setRecipeIndex(0);
@@ -767,6 +805,16 @@ function ProcessClips(props: ProcessProps) {
     const next = Math.max(clip.start, Math.min(clip.end, value));
     if (previewVideo.current) previewVideo.current.currentTime = next;
     setPreviewPosition(next);
+  };
+  const openReceipt = async (path: string) => {
+    setReceiptLoading(true);
+    try {
+      setReceipt(await window.cuttingFloor.readReceipt(path));
+    } catch {
+      setReceipt(null);
+    } finally {
+      setReceiptLoading(false);
+    }
   };
   return <section className={`process-page ${queueCollapsed ? 'queue-collapsed' : ''}`}>
     <div className="recipe-panel">
@@ -821,10 +869,11 @@ function ProcessClips(props: ProcessProps) {
       </fieldset>
       <div className="export-location"><div title={`${props.exportRoot}\\${props.session.name}`}><span>EXPORT LOCATION</span><b>{props.exportRoot}\{props.session.name}</b></div><button title="Choose a destination for this export only. The Settings default will not change." className="ghost" disabled={props.exporting} onClick={props.onChooseExportFolder}>Choose folder</button></div>
       {(clipProgress || props.exporting) && <div className={`export-progress ${props.exporting ? 'active' : ''}`} aria-busy={props.exporting} aria-live="polite"><div className="progress-copy"><span>EXPORT PROGRESS</span><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{props.exporting ? `Active · ${elapsed} elapsed` : clipProgress?.percent === 100 ? `Completed in ${elapsed}` : 'Stopped'}</small></div><strong>{Math.round(clipProgress?.percent ?? 0)}%</strong><div className="progress-track" role="progressbar" aria-label="Clip export progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(clipProgress?.percent ?? 0)}><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></div></div>}
-      <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}<button className="primary" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export clip →'}</button></div>
+      <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}{clip.completed && clip.receiptPath && <button className="ghost" disabled={receiptLoading} title="Open the render receipt — the auditable record of this export." onClick={() => openReceipt(clip.receiptPath as string)}>{receiptLoading ? 'Loading…' : 'Receipt'}</button>}<button className="primary" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export clip →'}</button></div>
       </div>
     </div>
     <aside className={`process-list ${queueCollapsed ? 'collapsed' : ''}`}><button className="process-queue-head" title={queueCollapsed ? 'Show project clips' : 'Hide project clips'} onClick={() => setQueueCollapsed((value) => !value)}><span><b>PROJECT CLIPS</b><small>{props.session.clips.length} clips</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>{!queueCollapsed && props.session.clips.map((item, index) => <button disabled={props.exporting} key={item.id} className={item.id === clip.id ? 'active' : ''} onClick={() => props.onSelect(item.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{item.name}</b><small>{formatTime(item.end - item.start)} · {item.completed ? 'COMPLETE' : 'READY'}</small></div></button>)}</aside>
+    {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
   </section>;
 }
 

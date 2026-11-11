@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes } from './shared.ts';
+import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes, buildReceipt, receiptFileName } from './shared.ts';
 import { ensurePreferenceFolders } from './storage.ts';
 
 const storageRoot = await mkdtemp(path.join(tmpdir(), 'lqcf-storage-'));
@@ -133,3 +133,30 @@ assert.equal(aspectRatio({ ...defaultRecipe(), aspectPreset: 'Free' }), undefine
 assert.equal(aspectRatio({ ...defaultRecipe(), aspectPreset: 'One-column square · 540×540' }), 1);
 assert.equal(aspectRatio({ ...defaultRecipe(), aspectPreset: 'Custom', customRatioWidth: 4, customRatioHeight: 5 }), 0.8);
 assert.equal(aspectRatio({ ...defaultRecipe(), aspectPreset: 'Custom', customRatioHeight: 0 }), undefined);
+
+// Render receipt: pure builder, stable file name, full snapshot capture.
+const receiptSource = { id: 'src-1', sourcePath: 'C:\\in\\show.mkv', fileUrl: 'file://in', displayName: 'S01E01', episodeLabel: 'S01E01', progress: 0, finished: false, missing: false, sourceAnalysis: { width: 1920, height: 1080, fps: 24, duration: 120, codec: 'h264', pixelFormat: 'yuv420p10le', bitDepth: 10, hdr: 'SDR Rec.709', scanType: 'Progressive', fieldOrder: 'tt', banding: 70, noise: 1.2 } } as never;
+const receiptClip = { id: 'clip-1', name: 'My Clip', start: 0, end: 10, recipe: { ...defaultRecipe(), outputFormat: 'MP4' }, completed: true } as never;
+const receipt = buildReceipt({ clip: receiptClip, source: receiptSource, outputPath: 'C:\\out\\exports\\My Clip.mp4', engine: 'VapourSynth', warnings: ['A note'], vapourSynthScriptPath: 'C:\\out\\exports\\My Clip.vpy' });
+assert.equal(receipt.version, 1);
+assert.equal(receipt.clipId, 'clip-1');
+assert.equal(receipt.clipName, 'My Clip');
+assert.deepEqual(receipt.clipRange, { start: 0, end: 10 });
+assert.equal(receipt.source.width, 1920);
+assert.equal(receipt.source.banding, 70);
+assert.equal(receipt.engine, 'VapourSynth');
+assert.equal(receipt.outputs.masterPath, 'C:\\out\\exports\\My Clip.mp4');
+assert.equal(receipt.outputs.vapourSynthScript, 'C:\\out\\exports\\My Clip.vpy');
+assert.deepEqual(receipt.warnings, ['A note']);
+assert.ok(receipt.rendered);
+// Fallback + png outputs surface when present; absent when not.
+const fb = buildReceipt({ clip: receiptClip, source: receiptSource, outputPath: 'x.mp4', engine: 'FFmpeg compatibility', fallbackReason: 'plugin missing', pngFramesPath: 'C:\\frames', warnings: [] });
+assert.equal(fb.engine, 'FFmpeg compatibility');
+assert.equal(fb.fallbackReason, 'plugin missing');
+assert.equal(fb.outputs.pngFramesFolder, 'C:\\frames');
+assert.equal(fb.outputs.vapourSynthScript, undefined);
+assert.equal(fb.warnings.length, 0);
+// receiptFileName: stable, safe, .receipt.json suffix.
+assert.equal(receiptFileName({ name: 'My Clip' } as never), 'My Clip.receipt.json');
+assert.equal(receiptFileName({ name: 'a/b\\c:d' } as never), 'a-b-c-d.receipt.json');
+console.log('receipt self-check passed');

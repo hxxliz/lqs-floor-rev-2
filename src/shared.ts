@@ -147,6 +147,7 @@ export interface SessionClip {
   fallbackReason?: string;
   outputWarnings?: string[];
   pngFramesPath?: string;
+  receiptPath?: string;
   recipe: ClipRecipe;
 }
 
@@ -217,6 +218,53 @@ export interface RuntimeStatus {
   error?: string;
 }
 
+// A render receipt is the verifiable record of a completed export: the exact
+// source, recipe, engine, and outputs — persisted as JSON next to the master so
+// a finished job can be audited or reproduced later. Ported from the Rust
+// rebuild's cf-domain Receipt model (M5).
+export interface RenderReceipt {
+  version: 1;
+  clipId: string;
+  clipName: string;
+  rendered: string;
+  sourcePath: string;
+  sourceLabel: string;
+  source: {
+    width: number;
+    height: number;
+    fps: number;
+    duration: number;
+    codec: string;
+    pixelFormat: string;
+    bitDepth: number;
+    hdr: string;
+    scanType: string;
+    fieldOrder: string;
+    banding?: number;
+    noise?: number;
+  };
+  recipe: ClipRecipe;
+  engine: 'VapourSynth' | 'FFmpeg compatibility';
+  fallbackReason?: string;
+  outputs: {
+    masterPath: string;
+    vapourSynthScript?: string;
+    pngFramesFolder?: string;
+  };
+  warnings: string[];
+  clipRange: { start: number; end: number };
+}
+
+export interface ReceiptSummary {
+  clipId: string;
+  clipName: string;
+  rendered: string;
+  engine: 'VapourSynth' | 'FFmpeg compatibility';
+  fallback: boolean;
+  warningCount: number;
+  outputPath: string;
+}
+
 export const runtimeVersionArguments = (name: 'ffmpeg' | 'ffprobe' | 'vspipe' | 'yt-dlp') => [name === 'ffmpeg' || name === 'ffprobe' ? '-version' : '--version'];
 
 export function downloadCookieArguments(browser: DownloadBrowser = 'none') {
@@ -255,7 +303,8 @@ export interface DesktopApi {
   savePreferences(preferences: StudioPreferences): Promise<StudioPreferences>;
   changeLibrary(session: StudioSession, libraryPath: string): Promise<WorkspaceState | null>;
   chooseLocation(kind: 'libraryPath' | 'downloadPath' | 'exportPath', current: string): Promise<string | null>;
-  exportClip(request: ExportRequest): Promise<SessionClip | null>;
+  exportClip: (request: ExportRequest) => Promise<SessionClip>;
+  readReceipt: (receiptPath: string) => Promise<RenderReceipt | null>;
   cancelTask(): Promise<void>;
   runtimeStatus(): Promise<RuntimeStatus>;
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
@@ -642,4 +691,55 @@ export function readyWithRecipe(clip: SessionClip, recipe: ClipRecipe): SessionC
 export function safeFileName(name: string) {
   const cleaned = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').replace(/[. ]+$/g, '').trim() || 'clip';
   return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(cleaned) ? `_${cleaned}` : cleaned;
+}
+
+// Build a render receipt from the pieces a completed export produces. Pure — no I/O —
+// so it is unit-testable. Ported from the Rust rebuild's receipt construction (M5).
+export function buildReceipt(args: {
+  clip: SessionClip;
+  source: StudioSource;
+  outputPath: string;
+  engine: 'VapourSynth' | 'FFmpeg compatibility';
+  fallbackReason?: string;
+  pngFramesPath?: string;
+  warnings: string[];
+  vapourSynthScriptPath?: string;
+}): RenderReceipt {
+  const { clip, source, outputPath, engine, fallbackReason, pngFramesPath, warnings, vapourSynthScriptPath } = args;
+  const a = source.sourceAnalysis;
+  const receipt: RenderReceipt = {
+    version: 1,
+    clipId: clip.id,
+    clipName: clip.name,
+    rendered: new Date().toISOString(),
+    sourcePath: source.sourcePath,
+    sourceLabel: source.episodeLabel || source.displayName,
+    source: {
+      width: a.width,
+      height: a.height,
+      fps: a.fps,
+      duration: a.duration,
+      codec: a.codec,
+      pixelFormat: a.pixelFormat,
+      bitDepth: a.bitDepth,
+      hdr: a.hdr,
+      scanType: a.scanType,
+      fieldOrder: a.fieldOrder,
+    },
+    recipe: clip.recipe,
+    engine,
+    outputs: { masterPath: outputPath },
+    warnings,
+    clipRange: { start: clip.start, end: clip.end },
+  };
+  if (a.banding !== undefined) receipt.source.banding = a.banding;
+  if (a.noise !== undefined) receipt.source.noise = a.noise;
+  if (fallbackReason) receipt.fallbackReason = fallbackReason;
+  if (pngFramesPath) receipt.outputs.pngFramesFolder = pngFramesPath;
+  if (vapourSynthScriptPath) receipt.outputs.vapourSynthScript = vapourSynthScriptPath;
+  return receipt;
+}
+
+export function receiptFileName(clip: SessionClip) {
+  return `${safeFileName(clip.name)}.receipt.json`;
 }

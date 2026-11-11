@@ -15,6 +15,7 @@ const api: DesktopApi = {
   changeLibrary: (session, libraryPath) => ipcRenderer.invoke('library:change', session, libraryPath),
   chooseLocation: (kind, current) => ipcRenderer.invoke('location:choose', kind, current),
   exportClip: (request: ExportRequest) => ipcRenderer.invoke('export:start', request),
+  readReceipt: (receiptPath: string) => ipcRenderer.invoke('receipt:read', receiptPath),
   cancelTask: () => ipcRenderer.invoke('task:cancel'),
   runtimeStatus: () => ipcRenderer.invoke('runtime:status'),
   onExportProgress: (callback) => {

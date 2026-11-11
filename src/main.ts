@@ -5,7 +5,7 @@ import { access, cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'nod
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses } from './media';
-import { assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type WorkspaceState } from './shared';
+import { buildReceipt, receiptFileName, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type WorkspaceState } from './shared';
 import { ensurePreferenceFolders } from './storage';
 
 if (squirrelStartup) app.quit();
@@ -388,7 +388,18 @@ async function exportClip(request: ExportRequest) {
       lastPercent = Math.max(lastPercent, percent);
       mainWindow?.webContents.send('export:progress', { clipId: request.clip.id, percent: lastPercent, message });
     });
-    return { ...request.clip, completed: true, outputPath, processingEngine: result.engine, fallbackReason: result.fallbackReason, pngFramesPath: result.pngFramesPath, outputWarnings: result.warnings };
+    const clipResult = { ...request.clip, completed: true, outputPath, processingEngine: result.engine, fallbackReason: result.fallbackReason, pngFramesPath: result.pngFramesPath, outputWarnings: result.warnings };
+    // Persist a render receipt next to the master: the verifiable record of this job
+    // (source, recipe, engine, outputs, warnings). Best-effort — a missing receipt
+    // must not fail the export.
+    try {
+      const vapourSynthScriptPath = request.clip.recipe.saveVapourSynthScript ? `${outputPath}.vpy` : undefined;
+      const receipt = buildReceipt({ clip: clipResult, source: request.source, outputPath, engine: result.engine, fallbackReason: result.fallbackReason, pngFramesPath: result.pngFramesPath, warnings: result.warnings ?? [], vapourSynthScriptPath });
+      const receiptPath = path.join(path.dirname(outputPath), receiptFileName(clipResult));
+      await writeFile(receiptPath, JSON.stringify(receipt, null, 2), 'utf8');
+      clipResult.receiptPath = receiptPath;
+    } catch { /* Receipt is a best-effort audit artifact; never block the master on it. */ }
+    return clipResult;
   } finally {
     if (exportController === controller) exportController = null;
   }
@@ -450,6 +461,13 @@ else void app.whenReady().then(async () => {
   ipcMain.handle('location:choose', (_event, kind: 'libraryPath' | 'downloadPath' | 'exportPath', current: string) => chooseLocation(kind, current));
   ipcMain.handle('runtime:status', getRuntimeStatus);
   ipcMain.handle('export:start', (_event, request: ExportRequest) => exportClip(request));
+  ipcMain.handle('receipt:read', async (_event, receiptPath: string) => {
+    try {
+      return JSON.parse(await readFile(receiptPath, 'utf8'));
+    } catch {
+      return null;
+    }
+  });
   ipcMain.handle('task:cancel', () => { exportController?.abort(); taskController?.abort(); });
   createWindow((await loadPreferences()).theme);
   app.on('second-instance', () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.show(); mainWindow?.focus(); });
