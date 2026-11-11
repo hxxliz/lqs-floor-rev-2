@@ -94,6 +94,7 @@ export default function App() {
   const [exportStartedAt, setExportStartedAt] = useState<number>();
   const [tuning, setTuning] = useState(false);
   const [tuneStatus, setTuneStatus] = useState('');
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number; message: string } | null>(null);
   const [taskStartedAt, setTaskStartedAt] = useState<number>();
   const [taskKind, setTaskKind] = useState<'download' | 'import'>();
   const [downloadSetup, setDownloadSetup] = useState<{ url: string; name: string; downloadPath: string; exportPath: string; browser: DownloadBrowser; projectId?: string }>();
@@ -468,6 +469,33 @@ export default function App() {
     } finally { setTuning(false); setTuneStatus(''); }
   };
 
+  const exportAll = async () => {
+    if (!session || !preferences || busy) return;
+    const readyClips = session.clips.filter((clip) => !clip.completed);
+    if (!readyClips.length) return;
+    const projectId = session.id;
+    let done = 0;
+    try {
+      for (let i = 0; i < readyClips.length; i += 1) {
+        const clip = readyClips[i];
+        const source = session.sources.find((item) => item.id === clip.sourceId);
+        if (!source) continue;
+        setBatchProgress({ done, total: readyClips.length, message: `Rendering ${clip.name}` });
+        const result = await window.cuttingFloor.exportClip({ source, clip, projectName: session.name, exportRoot: exportRootOverride ?? session.exportPath ?? preferences.exportPath });
+        done += 1;
+        if (sessionRef.current?.id === projectId) {
+          setSession((current) => (current && current.id === projectId ? { ...current, clips: current.clips.map((c) => (c.id === clip.id ? { ...c, completed: true, outputPath: result.outputPath, processingEngine: result.processingEngine, fallbackReason: result.fallbackReason, receiptPath: result.receiptPath, outputWarnings: result.outputWarnings, pngFramesPath: result.pngFramesPath } : c)) } : current));
+        }
+      }
+      setStatus(`Batch export finished — ${done} of ${readyClips.length} clips rendered.`);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') setStatus(`Batch export stopped — ${done} of ${readyClips.length} clips completed.`);
+      else reportError(error);
+    } finally {
+      setBatchProgress(null);
+    }
+  };
+
   const chooseExportFolder = async () => {
     if (!preferences) return;
     try {
@@ -545,7 +573,7 @@ export default function App() {
         speed={speed} muted={muted} queueCollapsed={queueCollapsed} queueFilter={queueFilter} status={status} onImport={() => importVideos('files')} onSeek={seek}
         onTime={(value) => { setPlayhead(value); const progressValue = duration ? value / duration : 0; if (Math.abs((activeSource?.progress ?? 0) - progressValue) > 0.002) setSession({ ...session, sources: session.sources.map((source) => source.id === activeSource?.id ? { ...source, progress: progressValue } : source) }); }} onMarkIn={() => { setMarkIn(playhead); setStatus(`Mark In set at ${formatTime(playhead)}`); }} onMarkOut={() => { setMarkOut(playhead); setStatus(`Mark Out set at ${formatTime(playhead)}`); }} onQueue={queueClip}
         onSpeed={(next) => { setSpeed(next); if (video.current) video.current.playbackRate = next; }}
-        onToggleMute={() => setMuted((value) => !value)} onFilter={setQueueFilter} onJoin={joinRanges} onResetCompleted={resetCompleted} onClearUnfinished={clearUnfinished} onMarkUnfinished={markUnfinished}
+        onToggleMute={() => setMuted((value) => !value)} onFilter={setQueueFilter} onJoin={joinRanges} onResetCompleted={resetCompleted} onClearUnfinished={clearUnfinished} onMarkUnfinished={markUnfinished} onExportAll={exportAll} exportingCount={batchProgress?.total ?? 0} batchProgress={batchProgress}
         onToggleReviewed={() => setSession({ ...session, sources: session.sources.map((source) => source.id === activeSource?.id ? { ...source, finished: !source.finished } : source) })}
         onReanalyze={() => void reanalyzeActiveSource()}
         onToggleQueue={() => setQueueCollapsed((value) => !value)} onSelectSource={(id) => setSession({ ...session, activeSourceId: id })}
@@ -669,6 +697,9 @@ interface FindProps {
   onResetCompleted(): void;
   onClearUnfinished(): void;
   onMarkUnfinished(id: string): void;
+  onExportAll(): void;
+  exportingCount: number;
+  batchProgress: { done: number; total: number; message: string } | null;
   onToggleReviewed(): void;
   onReanalyze(): void;
   onToggleQueue(): void;
@@ -715,7 +746,9 @@ function FindMoments(props: FindProps) {
       </div>
       <aside className={`clip-queue ${queueCollapsed ? 'collapsed' : ''}`}>
         <button title="Hide the queue to give the player more room." className="queue-head" onClick={props.onToggleQueue} aria-expanded={!queueCollapsed}><span><b>PROJECT CLIP QUEUE</b><small>{session.clips.length} MOMENTS</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>
-        {!queueCollapsed && <div className="queue-body"><div className="queue-tools"><select title="Filter the queue by Ready or Completed state." value={queueFilter} onChange={(event) => props.onFilter(event.target.value as typeof queueFilter)}><option value="all">All clips</option><option value="ready">Ready</option><option value="completed">Completed</option></select><button title="Merge overlapping or frame-adjacent ranges from the same source." onClick={props.onJoin}>Join touching</button><button title="Return every completed clip to Ready without deleting exports from disk." onClick={props.onResetCompleted}>Reset completed</button><button title="Remove all unfinished clips from this project." onClick={props.onClearUnfinished}>Clear ready</button></div>{session.clips.filter((clip) => queueFilter === 'all' || (queueFilter === 'ready' ? !clip.completed : clip.completed)).map((clip, index) => <div className={`queue-item ${clip.completed ? 'complete' : ''}`} key={clip.id}>
+        {!queueCollapsed && <div className="queue-body"><div className="queue-tools"><select title="Filter the queue by Ready or Completed state." value={queueFilter} onChange={(event) => props.onFilter(event.target.value as typeof queueFilter)}><option value="all">All clips</option><option value="ready">Ready</option><option value="completed">Completed</option></select><button title="Merge overlapping or frame-adjacent ranges from the same source." onClick={props.onJoin}>Join touching</button><button title="Return every completed clip to Ready without deleting exports from disk." onClick={props.onResetCompleted}>Reset completed</button><button title="Remove all unfinished clips from this project." onClick={props.onClearUnfinished}>Clear ready</button><button title="Render every ready clip in the queue, in order, with per-clip progress. Cancels safely." className={props.exportingCount ? 'primary' : ''} disabled={props.exportingCount > 0 || !session.clips.some((clip) => !clip.completed)} onClick={props.onExportAll}>{props.exportingCount ? `Exporting ${props.exportingCount}…` : 'Export all →'}</button></div>
+        {props.batchProgress && <div className="batch-progress" aria-live="polite"><div className="progress-copy"><span>BATCH EXPORT</span><b>{props.batchProgress.message}</b><small>{props.batchProgress.done} of {props.batchProgress.total} clips</small></div><div className="progress-track" role="progressbar" aria-label="Batch export progress" aria-valuemin={0} aria-valuemax={props.batchProgress.total} aria-valuenow={props.batchProgress.done}><i style={{ width: `${props.batchProgress.total ? Math.round((props.batchProgress.done / props.batchProgress.total) * 100) : 0}%` }} /></div></div>}
+        {session.clips.filter((clip) => queueFilter === 'all' || (queueFilter === 'ready' ? !clip.completed : clip.completed)).map((clip, index) => <div className={`queue-item ${clip.completed ? 'complete' : ''}`} key={clip.id}>
           <button className="queue-open" onClick={() => props.onSelectClip(clip.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{clip.name}</b><small>{formatTime(clip.start)} — {formatTime(clip.end)}</small></div></button>
           {clip.completed && <button title="Return this clip to Ready without deleting its previous export from disk." className="queue-state" aria-label={`Mark ${clip.name} unfinished`} onClick={() => props.onMarkUnfinished(clip.id)}>↺</button>}
           <button className="remove" aria-label={`Remove ${clip.name}`} onClick={() => props.onRemove(clip.id)}>×</button>
