@@ -4,7 +4,7 @@ import { watch, type FSWatcher } from 'node:fs';
 import { access, cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses } from './media';
+import { downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
 import { buildReceipt, receiptFileName, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type WorkspaceState } from './shared';
 import { ensurePreferenceFolders } from './storage';
 
@@ -468,6 +468,7 @@ else void app.whenReady().then(async () => {
       return null;
     }
   });
+  ipcMain.handle('previewTune', (_event, request: ExportRequest, settings) => tunePreview(request, settings, new AbortController().signal, (percent, message) => { mainWindow?.webContents.send('previewTuneProgress', { percent, message }); }));
   ipcMain.handle('task:cancel', () => { exportController?.abort(); taskController?.abort(); });
   createWindow((await loadPreferences()).theme);
   app.on('second-instance', () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.show(); mainWindow?.focus(); });

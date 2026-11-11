@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes, buildReceipt, receiptFileName } from './shared.ts';
+import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes, buildReceipt, receiptFileName, previewSettingsForEvidence, previewSettingsAbsorb, runPreviewLoop, evidenceFromPreviewAnalysis, previewSettingsToRecipePatch } from './shared.ts';
 import { ensurePreferenceFolders } from './storage.ts';
 
 const storageRoot = await mkdtemp(path.join(tmpdir(), 'lqcf-storage-'));
@@ -160,3 +160,92 @@ assert.equal(fb.warnings.length, 0);
 assert.equal(receiptFileName({ name: 'My Clip' } as never), 'My Clip.receipt.json');
 assert.equal(receiptFileName({ name: 'a/b\\c:d' } as never), 'a-b-c-d.receipt.json');
 console.log('receipt self-check passed');
+
+// ── M3: self-tuning preview loop (mirrors Rust cf-orchestration tests) ────────────
+// PixelEvidence predicates.
+{
+  const noisy = { combPixels: 20, distinctLumaLevels: 180, neighborDiff: 6.0 };
+  const s = previewSettingsForEvidence(noisy);
+  assert.ok(s.denoise, 'noisy frame → denoise');
+  assert.ok(!s.deinterlace, 'noise is not interlace');
+  const banded = { combPixels: 0, distinctLumaLevels: 40, neighborDiff: 0.5 };
+  assert.ok(previewSettingsForEvidence(banded).deband, 'low distinct levels → deband');
+  assert.ok(!previewSettingsForEvidence(banded).denoise, 'banded frame is not noise');
+  const clean = { combPixels: 0, distinctLumaLevels: 240, neighborDiff: 1.0 };
+  const cs = previewSettingsForEvidence(clean);
+  assert.ok(!cs.deinterlace && !cs.deband && !cs.denoise && !cs.sharpen, 'clean → no fixes');
+  // A "soft" frame (levels>96, comb<32, low noise) is exactly the is_clean() region,
+  // so for_evidence returns the clean default before the sharpen branch fires — this
+  // matches the Rust logic, where soft() is only reachable when is_clean() is also true.
+  const soft = { combPixels: 0, distinctLumaLevels: 120, neighborDiff: 1.0 };
+  assert.ok(!previewSettingsForEvidence(soft).sharpen, 'clean-region frame → no sharpen (is_clean short-circuit)');
+  const comb = { combPixels: 60, distinctLumaLevels: 200, neighborDiff: 1.0 };
+  const c = previewSettingsForEvidence(comb);
+  assert.ok(c.deinterlace, 'high comb → deinterlace');
+  assert.ok(c.denoise, 'interlaced preview also denoise');
+  assert.ok(!c.deband && !c.sharpen);
+}
+// Absorb is monotonic: fixes only accumulate, never revert.
+{
+  const none = { deinterlace: false, deband: false, denoise: false, sharpen: false };
+  const some = { deinterlace: true, deband: false, denoise: true, sharpen: false };
+  const merged = previewSettingsAbsorb(none, some).next;
+  assert.deepEqual(merged, some);
+  // Absorbing `none` into `some` changes nothing (already has the fixes).
+  assert.equal(previewSettingsAbsorb(some, none).changed, false);
+}
+// Loop convergence: a preview that improves each round converges.
+{
+  const sequence = [
+    { combPixels: 80, distinctLumaLevels: 200, neighborDiff: 1.0 },  // interlaced
+    { combPixels: 10, distinctLumaLevels: 200, neighborDiff: 2.0 },  // clean-ish
+  ];
+  let i = 0;
+  const result = await runPreviewLoop(
+    { deinterlace: false, deband: false, denoise: false, sharpen: false },
+    4,
+    async () => sequence[Math.min(i++, sequence.length - 1)],
+  );
+  assert.ok(result.rounds.length >= 1);
+  assert.ok(result.settings.deinterlace, 'loop enabled deinterlace from comb evidence');
+  assert.ok(result.converged, 'loop converged once the preview measured clean');
+}
+// Loop stops early when no new fix fires (the fix has stabilized), not at maxRounds.
+{
+  const stuck = { combPixels: 80, distinctLumaLevels: 200, neighborDiff: 1.0 }; // always interlaced
+  const result = await runPreviewLoop(
+    { deinterlace: false, deband: false, denoise: false, sharpen: false },
+    3,
+    async () => stuck,
+  );
+  // Round 1 applies deinterlace+denoise (changed); round 2 re-derives the same → no new fix → stop.
+  assert.equal(result.rounds.length, 2);
+  assert.ok(!result.converged, 'never clean → report honestly');
+  assert.ok(result.settings.deinterlace, 'fix still applied');
+}
+// Zero rounds is a no-op.
+{
+  const start = { deinterlace: true, deband: true, denoise: false, sharpen: false };
+  const result = await runPreviewLoop(start, 0, async () => { throw new Error('should not run'); });
+  assert.equal(result.rounds.length, 0);
+  assert.deepEqual(result.settings, start);
+}
+// evidenceFromPreviewAnalysis maps brain fields onto PixelEvidence.
+{
+  const ev = evidenceFromPreviewAnalysis({ combPixels: 50, distinctLumaLevels: 30, noise: 3.0 });
+  assert.deepEqual(ev, { combPixels: 50, distinctLumaLevels: 30, neighborDiff: 3.0 });
+  const empty = evidenceFromPreviewAnalysis({});
+  assert.equal(empty.combPixels, 0);
+  assert.equal(empty.distinctLumaLevels, 256);
+  assert.equal(empty.neighborDiff, 0);
+}
+// previewSettingsToRecipePatch maps converged settings onto the recipe.
+{
+  const patch = previewSettingsToRecipePatch({ deinterlace: true, deband: false, denoise: true, sharpen: false });
+  assert.equal(patch.deinterlace, 'Bwdif');
+  assert.equal(patch.deband, false);
+  assert.equal(patch.denoise, 'Balanced');
+  assert.equal(patch.denoiseStrength, 0.8);
+  assert.equal(patch.sharpen, 'Off');
+}
+console.log('preview-loop self-check passed');

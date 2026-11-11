@@ -17,6 +17,10 @@ import {
   outputFormats,
   orientedSourceDimensions,
   pixelAdvice,
+  previewSettingsForEvidence,
+  previewSettingsToRecipePatch,
+  runPreviewLoop,
+  evidenceFromPreviewAnalysis,
   readyWithRecipe,
   setCropEdge,
   suggestedRecipePatch,
@@ -28,6 +32,7 @@ import {
   type DownloadBrowser,
   type ExportProgress,
   type ProjectCard,
+  type PreviewSettings,
   type RuntimeStatus,
   type RenderReceipt,
   type SessionClip,
@@ -87,6 +92,8 @@ export default function App() {
   const [preferences, setPreferences] = useState<StudioPreferences>();
   const [exportRootOverride, setExportRootOverride] = useState<string>();
   const [exportStartedAt, setExportStartedAt] = useState<number>();
+  const [tuning, setTuning] = useState(false);
+  const [tuneStatus, setTuneStatus] = useState('');
   const [taskStartedAt, setTaskStartedAt] = useState<number>();
   const [taskKind, setTaskKind] = useState<'download' | 'import'>();
   const [downloadSetup, setDownloadSetup] = useState<{ url: string; name: string; downloadPath: string; exportPath: string; browser: DownloadBrowser; projectId?: string }>();
@@ -432,6 +439,35 @@ export default function App() {
     } finally { setExportStartedAt(undefined); }
   };
 
+  const tuneSelected = async () => {
+    if (!selectedClip || !preferences || !session || busy || tuning) return;
+    const source = session?.sources.find((item) => item.id === selectedClip.sourceId);
+    if (!source) return setStatus('The source for this clip is unavailable.');
+    const projectId = session.id;
+    try {
+      setTuning(true);
+      setTuneStatus('Rendering first preview');
+      const stop = window.cuttingFloor.onPreviewTuneProgress((prog) => setTuneStatus(prog.message));
+      let round = 0;
+      const renderAndAnalyze = async (settings: PreviewSettings) => {
+        round += 1;
+        setTuneStatus(`Round ${round} · rendering preview`);
+        return window.cuttingFloor.tunePreview({ source, clip: selectedClip, projectName: session.name, exportRoot: exportRootOverride ?? session.exportPath ?? preferences.exportPath }, settings);
+      };
+      const initialEvidence = evidenceFromPreviewAnalysis(source.sourceAnalysis);
+      const result = await runPreviewLoop(previewSettingsForEvidence(initialEvidence), 5, renderAndAnalyze);
+      stop();
+      const patch = previewSettingsToRecipePatch(result.settings);
+      updateRecipe(patch);
+      const fixes = Object.entries({ deinterlace: result.settings.deinterlace, deband: result.settings.deband, denoise: result.settings.denoise, sharpen: result.settings.sharpen }).filter(([, on]) => on).map(([k]) => k);
+      setTuneStatus(result.converged ? `Converged after ${result.rounds.length} round${result.rounds.length === 1 ? '' : 's'}` : `Stopped after ${result.rounds.length} rounds (no further improvement)`);
+      setStatus(fixes.length ? `Self-tune applied: ${fixes.join(', ')}. Review the recipe, then export.` : 'Self-tune found no fix needed — the preview already measured clean.');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') setTuneStatus('Self-tune cancelled');
+      else reportError(error);
+    } finally { setTuning(false); setTuneStatus(''); }
+  };
+
   const chooseExportFolder = async () => {
     if (!preferences) return;
     try {
@@ -522,6 +558,7 @@ export default function App() {
         exportRoot={exportRootOverride ?? session.exportPath ?? preferences.exportPath} exporting={Boolean(exportStartedAt)} exportElapsed={exportElapsed} onChooseExportFolder={chooseExportFolder}
         onApplyRecipeToOtherClips={applyRecipeToOtherClips}
         onFind={() => setView('find')}
+        onTune={tuneSelected} tuning={tuning} tuneStatus={tuneStatus}
         onLook={(look) => selectedClip && updateRecipe(applyLook(selectedClip.recipe, look, selectedSource?.sourceAnalysis))}
         onAspect={(aspectPreset) => { if (!selectedClip || !selectedSource) return; const oriented = orientedSourceDimensions(selectedSource.sourceAnalysis.width, selectedSource.sourceAnalysis.height, selectedClip.recipe.rotation); updateRecipe(fitCropToAspect({ ...selectedClip.recipe, aspectPreset }, oriented.width, oriented.height)); }}
         onCrop={(edge, value) => { if (!selectedClip || !selectedSource) return; const oriented = orientedSourceDimensions(selectedSource.sourceAnalysis.width, selectedSource.sourceAnalysis.height, selectedClip.recipe.rotation); updateRecipe(setCropEdge(selectedClip.recipe, edge, value, oriented.width, oriented.height)); }}
@@ -711,6 +748,9 @@ interface ProcessProps {
   onChooseExportFolder(): void;
   onApplyRecipeToOtherClips(): void;
   onFind(): void;
+  onTune(): void;
+  tuning: boolean;
+  tuneStatus: string;
 }
 
 function ReceiptModal({ receipt, onClose }: { receipt: RenderReceipt; onClose(): void }) {
@@ -869,7 +909,8 @@ function ProcessClips(props: ProcessProps) {
       </fieldset>
       <div className="export-location"><div title={`${props.exportRoot}\\${props.session.name}`}><span>EXPORT LOCATION</span><b>{props.exportRoot}\{props.session.name}</b></div><button title="Choose a destination for this export only. The Settings default will not change." className="ghost" disabled={props.exporting} onClick={props.onChooseExportFolder}>Choose folder</button></div>
       {(clipProgress || props.exporting) && <div className={`export-progress ${props.exporting ? 'active' : ''}`} aria-busy={props.exporting} aria-live="polite"><div className="progress-copy"><span>EXPORT PROGRESS</span><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{props.exporting ? `Active · ${elapsed} elapsed` : clipProgress?.percent === 100 ? `Completed in ${elapsed}` : 'Stopped'}</small></div><strong>{Math.round(clipProgress?.percent ?? 0)}%</strong><div className="progress-track" role="progressbar" aria-label="Clip export progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(clipProgress?.percent ?? 0)}><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></div></div>}
-      <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}{clip.completed && clip.receiptPath && <button className="ghost" disabled={receiptLoading} title="Open the render receipt — the auditable record of this export." onClick={() => openReceipt(clip.receiptPath as string)}>{receiptLoading ? 'Loading…' : 'Receipt'}</button>}<button className="primary" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export clip →'}</button></div>
+      {props.tuning && <div className="export-progress active" aria-busy="true" aria-live="polite"><div className="progress-copy"><span>SELF-TUNE PREVIEW</span><b>{props.tuneStatus || 'Tuning…'}</b><small>Measuring a short preview each round</small></div></div>}
+      <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}{clip.completed && clip.receiptPath && <button className="ghost" disabled={receiptLoading} title="Open the render receipt — the auditable record of this export." onClick={() => openReceipt(clip.receiptPath as string)}>{receiptLoading ? 'Loading…' : 'Receipt'}</button>}<button className="ghost" disabled={props.tuning || props.exporting} title="Self-tuning preview: renders short previews with candidate fixes and re-measures the pixels each round until the preview stops improving. Applies the converged recipe." onClick={props.onTune}>{props.tuning ? 'Tuning…' : 'Self-tune preview'}</button><button className="primary" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export clip →'}</button></div>
       </div>
     </div>
     <aside className={`process-list ${queueCollapsed ? 'collapsed' : ''}`}><button className="process-queue-head" title={queueCollapsed ? 'Show project clips' : 'Hide project clips'} onClick={() => setQueueCollapsed((value) => !value)}><span><b>PROJECT CLIPS</b><small>{props.session.clips.length} clips</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>{!queueCollapsed && props.session.clips.map((item, index) => <button disabled={props.exporting} key={item.id} className={item.id === clip.id ? 'active' : ''} onClick={() => props.onSelect(item.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{item.name}</b><small>{formatTime(item.end - item.start)} · {item.completed ? 'COMPLETE' : 'READY'}</small></div></button>)}</aside>

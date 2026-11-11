@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, runtimeVersionArguments, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type FrameTimingEvidence, type GuidanceConfidence, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
+import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, runtimeVersionArguments, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type FrameTimingEvidence, type GuidanceConfidence, type PixelEvidence, type PreviewSettings, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
 
 export interface ProcessingResult {
   engine: 'VapourSynth' | 'FFmpeg compatibility';
@@ -121,6 +121,8 @@ interface BrainResult {
   banding?: number;
   bandingNote?: string;
   noise?: number;
+  combPixels?: number;
+  distinctLumaLevels?: number;
   openingIssue?: string;
 }
 
@@ -248,6 +250,8 @@ export async function probeMedia(sourcePath: string, signal?: AbortSignal): Prom
   // a 0-255 palette-collapse score, noise a neighbor-diff median.
   if (typeof brain.banding === 'number') analysis.banding = brain.banding;
   if (typeof brain.noise === 'number') analysis.noise = brain.noise;
+  if (typeof brain.combPixels === 'number') analysis.combPixels = brain.combPixels;
+  if (typeof brain.distinctLumaLevels === 'number') analysis.distinctLumaLevels = brain.distinctLumaLevels;
   if (brain.bandingNote) analysis.bandingNote = brain.bandingNote;
   const details = [`${analysis.width}×${analysis.height}`, `${analysis.fps.toFixed(3)} fps`, `${analysis.bitDepth}-bit ${analysis.pixelFormat}`, analysis.hdr, analysis.scanType, `banding ${brain.banding ?? 'n/a'}`, `noise ${brain.noise ?? 'n/a'}`];
   analysis.qualitySummary = details.join(' · ');
@@ -616,6 +620,53 @@ export async function processClip(request: ExportRequest, outputPath: string, si
     return { engine, fallbackReason, pngFramesPath, warnings };
   } finally {
     await rm(partialPath, { force: true });
+    await rm(work, { recursive: true, force: true });
+  }
+}
+
+/**
+ * M3: render a short preview of the clip range with the candidate PreviewSettings
+ * applied (via the FFmpeg compatibility filter chain, which is fast and needs no VS
+ * plugin bundle), then run the analysis brain on that preview and return the
+ * measured pixel evidence. This is the `renderAndAnalyze` closure for the
+ * self-tuning loop.
+ */
+export async function tunePreview(request: ExportRequest, settings: PreviewSettings, signal: AbortSignal, onProgress: (percent: number, message: string) => void): Promise<PixelEvidence> {
+  const { clip, source } = request;
+  const duration = Math.max(0, clip.end - clip.start);
+  const previewSeconds = Math.min(3, Math.max(0.2, duration));
+  const candidate: ClipRecipe = {
+    ...clip.recipe,
+    deinterlace: settings.deinterlace ? 'Bwdif' : 'Off',
+    denoise: settings.denoise ? 'Balanced' : 'Off',
+    denoiseStrength: settings.denoise ? 0.8 : clip.recipe.denoiseStrength,
+    deband: settings.deband,
+    sharpen: settings.sharpen ? 'Natural' : 'Off',
+    sharpenStrength: settings.sharpen ? 0.5 : clip.recipe.sharpenStrength,
+  };
+  const candidateRequest: ExportRequest = { ...request, clip: { ...clip, recipe: candidate } };
+  const work = await mkdtemp(path.join(tmpdir(), 'lq-tune-preview-'));
+  const previewPath = path.join(work, 'preview.mp4');
+  try {
+    onProgress(5, 'Rendering short preview with candidate settings');
+    const args = [
+      '-hide_banner', '-y',
+      '-ss', clip.start.toFixed(6), '-t', previewSeconds.toFixed(6),
+      '-i', source.sourcePath,
+      '-vf', compatibilityFilters(candidateRequest).join(','),
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '20', '-pix_fmt', 'yuv420p',
+      '-an', '-progress', 'pipe:2', previewPath,
+    ];
+    await runFfmpeg(await executable('ffmpeg'), args, previewSeconds, signal, (pct, msg) => onProgress(Math.min(70, 5 + Math.round(pct * 0.65)), msg), 'Preview render');
+    if (!existsSync(previewPath)) throw new Error('The preview render did not produce a file.');
+    onProgress(75, 'Analyzing preview pixels');
+    const brain = await runBrain(previewPath, { fps: source.sourceAnalysis.fps }, signal);
+    return {
+      combPixels: typeof brain.combPixels === 'number' ? brain.combPixels : 0,
+      distinctLumaLevels: typeof brain.distinctLumaLevels === 'number' ? brain.distinctLumaLevels : 256,
+      neighborDiff: typeof brain.noise === 'number' ? brain.noise : 0,
+    };
+  } finally {
     await rm(work, { recursive: true, force: true });
   }
 }

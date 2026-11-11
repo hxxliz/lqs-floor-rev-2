@@ -84,6 +84,11 @@ export interface SourceAnalysis {
   banding?: number;
   bandingNote?: string;
   noise?: number;
+  // Raw luma evidence the self-tuning preview loop reads (mirrors the Rust
+  // PixelEvidence). combPixels = median interlaced comb count; distinctLumaLevels
+  // = median distinct luma byte levels (low = collapsed palette / banding).
+  combPixels?: number;
+  distinctLumaLevels?: number;
   qualitySummary: string;
 }
 
@@ -305,6 +310,8 @@ export interface DesktopApi {
   chooseLocation(kind: 'libraryPath' | 'downloadPath' | 'exportPath', current: string): Promise<string | null>;
   exportClip: (request: ExportRequest) => Promise<SessionClip>;
   readReceipt: (receiptPath: string) => Promise<RenderReceipt | null>;
+  tunePreview: (request: ExportRequest, settings: PreviewSettings) => Promise<PixelEvidence>;
+  onPreviewTuneProgress: (callback: (prog: { percent: number; message: string }) => void) => () => void;
   cancelTask(): Promise<void>;
   runtimeStatus(): Promise<RuntimeStatus>;
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
@@ -537,6 +544,135 @@ export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipReci
     deinterlace: confirmedInterlace ? 'Bwdif' : 'Off',
     fieldOrder: /tt|tb/i.test(analysis.fieldOrder) ? 'Top first' : /bb|bt/i.test(analysis.fieldOrder) ? 'Bottom first' : 'Auto',
     colorManagement: analysis.hdr === 'HDR PQ' ? 'HDR PQ to SDR' : analysis.hdr === 'HDR HLG' ? 'HDR HLG to SDR' : /601|smpte170m/i.test(analysis.colorSpace) ? 'Convert 601 to 709' : 'Auto',
+  };
+}
+
+// ── M3: self-tuning preview loop (ported from Rust cf-orchestration) ─────────────
+// The loop measures the PREVIEW's pixels (not the source), derives fixes from what the
+// preview still shows, and monotonically accumulates fixes until the preview is clean or
+// stops changing. `renderAndAnalyze` is the host hook that renders a short preview clip
+// with the candidate settings and re-analyzes its luma.
+
+export interface PixelEvidence {
+  /** Median count of interlaced comb pixels across sampled frames. */
+  readonly combPixels: number;
+  /** Median distinct luma byte levels (banding: a collapsed palette is far fewer). */
+  readonly distinctLumaLevels: number;
+  /** Median neighbor luma difference (sensor noise / grain). */
+  readonly neighborDiff: number;
+}
+
+export interface PreviewSettings {
+  readonly deinterlace: boolean;
+  readonly deband: boolean;
+  readonly denoise: boolean;
+  readonly sharpen: boolean;
+}
+
+/**
+ * Translate measured pixel evidence into the next candidate settings.
+ * Mirrors Rust `PreviewSettings::for_evidence` exactly:
+ * - noisy   → prefer denoise over deinterlace (noise, not combs, is the defect)
+ * - banded  → deband
+ * - comb    → deinterlace
+ * - soft    → sharpen (only when no other fix is pending)
+ */
+export function previewSettingsForEvidence(evidence: PixelEvidence): PreviewSettings {
+  const comb = evidence.combPixels;
+  const levels = evidence.distinctLumaLevels;
+  const noise = evidence.neighborDiff;
+  const clean = comb < 32 && levels > 96 && noise < 4.5;
+  if (clean) return { deinterlace: false, deband: false, denoise: false, sharpen: false };
+  // A noisy frame's neighbor differences are grain, not interlace combs — denoise it.
+  const noisy = noise >= 4.5;
+  // Banding is a collapsed palette (few distinct levels) that is not noise.
+  const banded = levels < 96 && noise < 4.5;
+  // Interlace combs are real comb structure, not grain or banding.
+  const interlaced = comb >= 32 && noise < 4.5;
+  const soft = noise < 4.5 && !banded && !interlaced;
+  return {
+    deinterlace: interlaced,
+    deband: banded,
+    denoise: noisy || interlaced,
+    sharpen: soft,
+  };
+}
+
+/** Monotonic accumulator: fixes only ever accumulate, never revert. */
+export function previewSettingsAbsorb(current: PreviewSettings, next: PreviewSettings): { next: PreviewSettings; changed: boolean } {
+  const merged: PreviewSettings = {
+    deinterlace: current.deinterlace || next.deinterlace,
+    deband: current.deband || next.deband,
+    denoise: current.denoise || next.denoise,
+    sharpen: current.sharpen || next.sharpen,
+  };
+  const changed = merged.deinterlace !== current.deinterlace || merged.deband !== current.deband || merged.denoise !== current.denoise || merged.sharpen !== current.sharpen;
+  return { next: merged, changed };
+}
+
+export interface PreviewLoopStep {
+  readonly round: number;
+  readonly evidence: PixelEvidence;
+  readonly applied: PreviewSettings;
+  readonly newFix: boolean;
+}
+
+export interface PreviewLoopResult {
+  readonly rounds: readonly PreviewLoopStep[];
+  readonly converged: boolean;
+  readonly settings: PreviewSettings;
+}
+
+/**
+ * Run the self-tuning preview loop. `renderAndAnalyze` renders a short preview
+ * with the current settings and returns its measured pixel evidence.
+ * Stops when the preview is clean, when no new fix fires, or at `maxRounds`.
+ * Mirrors Rust `run_preview_loop` exactly (absorb = monotonic).
+ */
+export async function runPreviewLoop(
+  start: PreviewSettings,
+  maxRounds: number,
+  renderAndAnalyze: (settings: PreviewSettings, round: number) => Promise<PixelEvidence>,
+): Promise<PreviewLoopResult> {
+  if (maxRounds <= 0) return { rounds: [], converged: false, settings: start };
+  const rounds: PreviewLoopStep[] = [];
+  let settings = start;
+  for (let round = 1; round <= maxRounds; round++) {
+    const evidence = await renderAndAnalyze(settings, round);
+    const derived = previewSettingsForEvidence(evidence);
+    const absorb = previewSettingsAbsorb(settings, derived);
+    rounds.push({ round, evidence, applied: absorb.next, newFix: absorb.changed });
+    settings = absorb.next;
+    const clean = evidence.combPixels < 32 && evidence.distinctLumaLevels > 96 && evidence.neighborDiff < 4.5;
+    if (clean || !absorb.changed) {
+      return { rounds, converged: clean, settings };
+    }
+  }
+  return { rounds, converged: false, settings };
+}
+
+/**
+ * Build the PixelEvidence a preview-render hook should pass into runPreviewLoop.
+ * The Electron brain (cf_analysis.py) measures combPixels / distinctLumaLevels /
+ * noise (neighbor_diff median) directly on the rendered preview's luma frames.
+ */
+export function evidenceFromPreviewAnalysis(analysis: { combPixels?: number; distinctLumaLevels?: number; noise?: number }): PixelEvidence {
+  return {
+    combPixels: analysis.combPixels ?? 0,
+    distinctLumaLevels: analysis.distinctLumaLevels ?? 256,
+    neighborDiff: analysis.noise ?? 0,
+  };
+}
+
+/** Convert a converged PreviewSettings into the partial ClipRecipe patch to apply. */
+export function previewSettingsToRecipePatch(settings: PreviewSettings): Partial<ClipRecipe> {
+  return {
+    deinterlace: settings.deinterlace ? 'Bwdif' : 'Off',
+    deband: settings.deband,
+    denoise: settings.denoise ? 'Balanced' : 'Off',
+    denoiseStrength: settings.denoise ? 0.8 : 0,
+    sharpen: settings.sharpen ? 'Natural' : 'Off',
+    sharpenStrength: settings.sharpen ? 0.5 : 0,
   };
 }
 

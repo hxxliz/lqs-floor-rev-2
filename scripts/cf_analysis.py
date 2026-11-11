@@ -352,6 +352,11 @@ def analyze(ffmpeg: str, path: str, duration_s: float, fps: float,
         "banding": banding,
         "bandingNote": banding_note,
         "noise": round(ndiff_med, 3),
+        # Raw luma signals the self-tuning preview loop reads directly (mirrors
+        # the Rust PixelEvidence). Derived banding/noise above stay for
+        # guidance display; these are the evidence primitives.
+        "combPixels": int(comb_med),
+        "distinctLumaLevels": int(levels_med),
         "openingIssue": opening_issue,
         "qualitySummary": (
             f"scan={'Interlaced' if comb_med >= 400 else 'Progressive'}, "

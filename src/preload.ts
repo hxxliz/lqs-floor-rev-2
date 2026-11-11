@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopApi, ExportProgress, ExportRequest, StudioPreferences, StudioSession, StudioSource, TaskProgress } from './shared';
+import type { DesktopApi, ExportProgress, ExportRequest, PixelEvidence, PreviewSettings, StudioPreferences, StudioSession, StudioSource, TaskProgress } from './shared';
 
 const api: DesktopApi = {
   loadWorkspace: () => ipcRenderer.invoke('workspace:load'),
@@ -16,6 +16,12 @@ const api: DesktopApi = {
   chooseLocation: (kind, current) => ipcRenderer.invoke('location:choose', kind, current),
   exportClip: (request: ExportRequest) => ipcRenderer.invoke('export:start', request),
   readReceipt: (receiptPath: string) => ipcRenderer.invoke('receipt:read', receiptPath),
+  tunePreview: (request: ExportRequest, settings: PreviewSettings) => ipcRenderer.invoke('previewTune', request, settings),
+  onPreviewTuneProgress: (callback: (prog: { percent: number; message: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, prog: { percent: number; message: string }) => callback(prog);
+    ipcRenderer.on('previewTuneProgress', listener);
+    return () => { ipcRenderer.removeListener('previewTuneProgress', listener); };
+  },
   cancelTask: () => ipcRenderer.invoke('task:cancel'),
   runtimeStatus: () => ipcRenderer.invoke('runtime:status'),
   onExportProgress: (callback) => {
