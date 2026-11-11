@@ -5,6 +5,8 @@ dist/
 .superdesign/tmp/
 *.log
 .superdesign/tmp/
+__pycache__/
+*.pyc
 
 # Bundled binaries are backed up as versioned GitHub release downloads.
 runtime/**
