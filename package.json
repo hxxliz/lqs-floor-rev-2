@@ -1,0 +1,32 @@
+{
+  "name": "lqs-cutting-floor",
+  "productName": "LQ's Cutting Floor",
+  "version": "0.3.24",
+  "author": "LQ",
+  "description": "Cross-platform desktop video sifting and VapourSynth processing studio.",
+  "main": ".vite/build/main.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "typecheck": "tsc --noEmit",
+    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/domain.selftest.mts && node src/sidebar.selftest.cjs"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "latest",
+    "@electron-forge/maker-squirrel": "latest",
+    "@electron-forge/plugin-vite": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "electron": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "react": "latest",
+    "react-dom": "latest"
+  }
+}

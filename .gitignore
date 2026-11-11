@@ -1,0 +1,18 @@
+node_modules/
+.vite/
+out/
+dist/
+.superdesign/tmp/
+*.log
+.superdesign/tmp/
+
+# Bundled binaries are backed up as versioned GitHub release downloads.
+runtime/**
+!runtime/win32-x64/
+!runtime/win32-x64/README.md
+
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12

@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "mac-process-handoff": {
+      "targetKind": "new-ui",
+      "projectId": "0bad16e2-4bd0-463c-ba59-9f6f791a5d65",
+      "activeDraftId": "20aaed07-59a3-4ef2-a969-80cdd18211fd",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "95301eb6-f43e-40aa-ae8e-3d22799a4265",
+        "assets-lqcuttingfloor.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-lqcuttingfloor.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/0bad16e2-4bd0-463c-ba59-9f6f791a5d65/brand-assets/assets-lqcuttingfloor.png/lqcuttingfloor.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/App.tsx:331:650",
+        "src/styles.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "6DCCE236E11C10F3F1FD5067B3B2DF5110C72696128C85D70F3506AC38C4D7AE",
+        "src/App.tsx": "9B947C1D8BEF51557B0C920CF7327E12C03EDC6F7D984CD8E48D0E37D5439826",
+        "src/styles.css": "46DCED6E8CBF982AF402FC8E06F8AF6C2706B3D43E7ECD277524055836F37A20"
+      },
+      "components": [],
+      "drafts": {
+        "f0387731-35f4-40f0-9590-f39d7dd1052a": {
+          "title": "LQ's Cutting Floor — Process Clips Focus Workspace",
+          "visualDirection": "video-first macOS processing workspace with accessible matched light and dark themes",
+          "parentDraftId": "525f7880-1974-4fb2-b9a8-ef7f76f28329",
+          "currentVersion": 7
+        },
+        "20aaed07-59a3-4ef2-a969-80cdd18211fd": {
+          "title": "LQ's Cutting Floor — Process Clips — Playback Focus",
+          "visualDirection": "active-playback-first center workspace with a narrow collapsible right queue and platform-neutral accessible themes",
+          "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
+          "currentVersion": 7
+        },
+        "466f49c8-6eda-4193-b4e5-24cf94b2c032": {
+          "title": "Process Clips — Dark",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "20aaed07-59a3-4ef2-a969-80cdd18211fd",
+          "currentVersion": 3
+        },
+        "e58179da-3d7c-42ec-8f06-6387a7315cf3": {
+          "title": "Process Clips — Light",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "20aaed07-59a3-4ef2-a969-80cdd18211fd",
+          "currentVersion": 3
+        }
+      },
+      "updatedAt": "2026-09-15T00:57:41.337Z"
+    },
+    "flow:home": {
+      "targetKind": "new-ui",
+      "projectId": "0bad16e2-4bd0-463c-ba59-9f6f791a5d65",
+      "activeDraftId": "3f2c2da3-5aa8-40ee-8cfa-8715ecbef5e4",
+      "designSystemPath": ".superdesign/design-system.md",
+      "sourceTarget": "mac-process-handoff",
+      "sourceDraftId": "20aaed07-59a3-4ef2-a969-80cdd18211fd",
+      "referenceIds": [
+        "95301eb6-f43e-40aa-ae8e-3d22799a4265",
+        "assets-lqcuttingfloor.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-lqcuttingfloor.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/0bad16e2-4bd0-463c-ba59-9f6f791a5d65/brand-assets/assets-lqcuttingfloor.png/lqcuttingfloor.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/App.tsx:331:650",
+        "src/styles.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "6DCCE236E11C10F3F1FD5067B3B2DF5110C72696128C85D70F3506AC38C4D7AE",
+        "src/App.tsx": "9B947C1D8BEF51557B0C920CF7327E12C03EDC6F7D984CD8E48D0E37D5439826",
+        "src/styles.css": "46DCED6E8CBF982AF402FC8E06F8AF6C2706B3D43E7ECD277524055836F37A20"
+      },
+      "components": [],
+      "drafts": {
+        "ea722a23-5652-42f0-890c-cc92904315e5": {
+          "title": "LQ's Cutting Floor — Home",
+          "visualDirection": "library-first homepage with visible project creation and download progress",
+          "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
+          "currentVersion": 6
+        },
+        "3f2c2da3-5aa8-40ee-8cfa-8715ecbef5e4": {
+          "title": "LQ's Cutting Floor — Home — Accessible Themes",
+          "visualDirection": "library-first homepage with validated readable light and dark themes",
+          "parentDraftId": "ea722a23-5652-42f0-890c-cc92904315e5",
+          "currentVersion": 4
+        },
+        "74220829-8861-4d42-b354-760e22c61917": {
+          "title": "Home — Dark",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "3f2c2da3-5aa8-40ee-8cfa-8715ecbef5e4",
+          "currentVersion": 1
+        },
+        "94908bcf-9b4b-4c6b-9b02-674fb0a9aeb4": {
+          "title": "Home — Light",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "3f2c2da3-5aa8-40ee-8cfa-8715ecbef5e4",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-09-15T00:57:41.337Z"
+    },
+    "flow:find-moments": {
+      "targetKind": "new-ui",
+      "projectId": "0bad16e2-4bd0-463c-ba59-9f6f791a5d65",
+      "activeDraftId": "9d6f156a-e058-482f-9945-b932bb41b31b",
+      "designSystemPath": ".superdesign/design-system.md",
+      "sourceTarget": "mac-process-handoff",
+      "sourceDraftId": "20aaed07-59a3-4ef2-a969-80cdd18211fd",
+      "referenceIds": [
+        "95301eb6-f43e-40aa-ae8e-3d22799a4265",
+        "assets-lqcuttingfloor.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-lqcuttingfloor.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/0bad16e2-4bd0-463c-ba59-9f6f791a5d65/brand-assets/assets-lqcuttingfloor.png/lqcuttingfloor.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/App.tsx:331:650",
+        "src/styles.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "6DCCE236E11C10F3F1FD5067B3B2DF5110C72696128C85D70F3506AC38C4D7AE",
+        "src/App.tsx": "9B947C1D8BEF51557B0C920CF7327E12C03EDC6F7D984CD8E48D0E37D5439826",
+        "src/styles.css": "46DCED6E8CBF982AF402FC8E06F8AF6C2706B3D43E7ECD277524055836F37A20"
+      },
+      "components": [],
+      "drafts": {
+        "f0bdb4fd-d0d4-455d-a182-37254463bcda": {
+          "title": "LQ's Cutting Floor — Find Moments",
+          "visualDirection": "playback-first marking workspace with timeline and collapsible clip queue",
+          "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
+          "currentVersion": 4
+        },
+        "9d6f156a-e058-482f-9945-b932bb41b31b": {
+          "title": "LQ's Cutting Floor — Find Moments — Accessible Themes",
+          "visualDirection": "playback-first marking workspace with validated readable light and dark themes",
+          "parentDraftId": "f0bdb4fd-d0d4-455d-a182-37254463bcda",
+          "currentVersion": 4
+        },
+        "2ffdb8df-e9d6-469b-ab6c-9824e10288ae": {
+          "title": "Find Moments — Dark",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "9d6f156a-e058-482f-9945-b932bb41b31b",
+          "currentVersion": 1
+        },
+        "bc4a474b-ebf2-4392-886c-f422ec6b9178": {
+          "title": "Find Moments — Light",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "9d6f156a-e058-482f-9945-b932bb41b31b",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-09-15T00:57:41.337Z"
+    },
+    "flow:settings": {
+      "targetKind": "new-ui",
+      "projectId": "0bad16e2-4bd0-463c-ba59-9f6f791a5d65",
+      "activeDraftId": "eca94627-1893-462c-bd9b-3c4358dee36f",
+      "designSystemPath": ".superdesign/design-system.md",
+      "sourceTarget": "mac-process-handoff",
+      "sourceDraftId": "20aaed07-59a3-4ef2-a969-80cdd18211fd",
+      "referenceIds": [
+        "95301eb6-f43e-40aa-ae8e-3d22799a4265",
+        "assets-lqcuttingfloor.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-lqcuttingfloor.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/0bad16e2-4bd0-463c-ba59-9f6f791a5d65/brand-assets/assets-lqcuttingfloor.png/lqcuttingfloor.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/App.tsx:331:650",
+        "src/styles.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "6DCCE236E11C10F3F1FD5067B3B2DF5110C72696128C85D70F3506AC38C4D7AE",
+        "src/App.tsx": "9B947C1D8BEF51557B0C920CF7327E12C03EDC6F7D984CD8E48D0E37D5439826",
+        "src/styles.css": "46DCED6E8CBF982AF402FC8E06F8AF6C2706B3D43E7ECD277524055836F37A20"
+      },
+      "components": [],
+      "drafts": {
+        "a7de9542-243b-4160-b4da-26585f330aa8": {
+          "title": "LQ's Cutting Floor — Settings",
+          "visualDirection": "settings-only preferences workspace with accessible light and dark themes",
+          "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
+          "currentVersion": 4
+        },
+        "eca94627-1893-462c-bd9b-3c4358dee36f": {
+          "title": "LQ's Cutting Floor — Settings — Accessible Themes",
+          "visualDirection": "settings-only preferences workspace with validated readable light and dark themes",
+          "parentDraftId": "a7de9542-243b-4160-b4da-26585f330aa8",
+          "currentVersion": 3
+        },
+        "d9fbbed4-e16a-423d-a03d-b57c87640b55": {
+          "title": "Settings — Dark",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "eca94627-1893-462c-bd9b-3c4358dee36f",
+          "currentVersion": 1
+        },
+        "4dd1e6d8-c059-463b-ba3c-7494ecb10d65": {
+          "title": "Settings — Light",
+          "visualDirection": "fixed theme canvas specimen",
+          "parentDraftId": "eca94627-1893-462c-bd9b-3c4358dee36f",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-09-15T00:57:41.337Z"
+    },
+    "theme-handoff": {
+      "targetKind": "new-ui",
+      "projectId": "0bad16e2-4bd0-463c-ba59-9f6f791a5d65",
+      "activeDraftId": "9ad7e9fa-b408-48d7-9296-b22f88528e2a",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "95301eb6-f43e-40aa-ae8e-3d22799a4265",
+        "assets-lqcuttingfloor.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-lqcuttingfloor.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/0bad16e2-4bd0-463c-ba59-9f6f791a5d65/brand-assets/assets-lqcuttingfloor.png/lqcuttingfloor.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/App.tsx:331:650",
+        "src/styles.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "6DCCE236E11C10F3F1FD5067B3B2DF5110C72696128C85D70F3506AC38C4D7AE",
+        "src/App.tsx": "9B947C1D8BEF51557B0C920CF7327E12C03EDC6F7D984CD8E48D0E37D5439826",
+        "src/styles.css": "46DCED6E8CBF982AF402FC8E06F8AF6C2706B3D43E7ECD277524055836F37A20"
+      },
+      "components": [],
+      "drafts": {
+        "9ad7e9fa-b408-48d7-9296-b22f88528e2a": {
+          "title": "Theme Behavior — Implementation Handoff",
+          "visualDirection": "current cross-platform handoff, paired dark/light page columns, persisted dark-default theme and latest playback/source-guidance acceptance criteria",
+          "currentVersion": 3
+        }
+      },
+      "updatedAt": "2026-09-15T00:57:41.337Z"
+    }
+  }
+}

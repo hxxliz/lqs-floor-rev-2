@@ -1,0 +1,37 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type { DesktopApi, ExportProgress, ExportRequest, StudioPreferences, StudioSession, StudioSource, TaskProgress } from './shared';
+
+const api: DesktopApi = {
+  loadWorkspace: () => ipcRenderer.invoke('workspace:load'),
+  createProject: (name: string) => ipcRenderer.invoke('project:create', name),
+  openProject: (id: string) => ipcRenderer.invoke('project:open', id),
+  renameProject: (id: string, name: string) => ipcRenderer.invoke('project:rename', id, name),
+  deleteProject: (id: string) => ipcRenderer.invoke('project:delete', id),
+  saveSession: (session: StudioSession) => ipcRenderer.invoke('session:save', session),
+  importVideos: (session, mode) => ipcRenderer.invoke('source:import', session, mode),
+  reanalyzeSource: (sourcePath) => ipcRenderer.invoke('source:reanalyze', sourcePath),
+  downloadVideo: (session, url, downloadFolder, browser) => ipcRenderer.invoke('source:download', session, url, downloadFolder, browser),
+  savePreferences: (preferences: StudioPreferences) => ipcRenderer.invoke('preferences:save', preferences),
+  changeLibrary: (session, libraryPath) => ipcRenderer.invoke('library:change', session, libraryPath),
+  chooseLocation: (kind, current) => ipcRenderer.invoke('location:choose', kind, current),
+  exportClip: (request: ExportRequest) => ipcRenderer.invoke('export:start', request),
+  cancelTask: () => ipcRenderer.invoke('task:cancel'),
+  runtimeStatus: () => ipcRenderer.invoke('runtime:status'),
+  onExportProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: ExportProgress) => callback(progress);
+    ipcRenderer.on('export:progress', listener);
+    return () => ipcRenderer.removeListener('export:progress', listener);
+  },
+  onTaskProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress) => callback(progress);
+    ipcRenderer.on('task:progress', listener);
+    return () => ipcRenderer.removeListener('task:progress', listener);
+  },
+  onWatchSources: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, sources: StudioSource[]) => callback(sources);
+    ipcRenderer.on('watch:sources', listener);
+    return () => ipcRenderer.removeListener('watch:sources', listener);
+  },
+};
+
+contextBridge.exposeInMainWorld('cuttingFloor', api);
