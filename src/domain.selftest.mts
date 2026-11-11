@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch } from './shared.ts';
+import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch } from './shared.ts';
 import { ensurePreferenceFolders } from './storage.ts';
 
 const storageRoot = await mkdtemp(path.join(tmpdir(), 'lqcf-storage-'));
@@ -50,6 +50,21 @@ assert.equal(applyLook(cleanSrc, 'Soft / noisy source', { banding: 30, noise: 2 
 assert.equal(applyLook(cleanSrc, 'Soft / noisy source', undefined).deband, true);
 // Presets that intentionally skip deband stay off even with banding evidence.
 assert.equal(applyLook(cleanSrc, 'Crisp', { banding: 60, noise: 2 } as never).deband, false);
+// pixelAdvice: honest container-tag vs decoded-pixel callouts.
+// Tagged interlaced but sampled progressive -> surfaces the disagreement.
+const interTaggedProgressive = { hdr: 'SDR Rec.709', scanType: 'Interlaced', fieldOrder: 'tt', colorSpace: 'bt709', duration: 1, width: 1, height: 1, fps: 24, codec: 'h264', format: 'mp4', pixelFormat: 'yuv420p', bitDepth: 8, bitrate: 0, colorTransfer: 'bt709', variableFrameRate: false, qualitySummary: '', scanEvidence: { sampledWindows: 3, sampledSeconds: 9, topFirst: 0, bottomFirst: 0, progressive: 160, uncertain: 0, repeatedFields: 0, classification: 'Progressive', confidence: 'High' } } as never;
+assert.match(pixelAdvice(interTaggedProgressive).join(' '), /Tagged interlaced, but the sampled frames look progressive/);
+// Tagged progressive but decoded pixels show interlacing (high confidence).
+const progTaggedInterlaced = { hdr: 'SDR Rec.709', scanType: 'Progressive', fieldOrder: 'tt', colorSpace: 'bt709', duration: 1, width: 1, height: 1, fps: 24, codec: 'h264', format: 'mp4', pixelFormat: 'yuv420p', bitDepth: 8, bitrate: 0, colorTransfer: 'bt709', variableFrameRate: false, qualitySummary: '', scanEvidence: { sampledWindows: 3, sampledSeconds: 9, topFirst: 160, bottomFirst: 0, progressive: 0, uncertain: 0, repeatedFields: 0, classification: 'Interlaced', confidence: 'High' } } as never;
+assert.match(pixelAdvice(progTaggedInterlaced).join(' '), /Tagged progressive, but the decoded pixels show interlacing/);
+// Strong banding callout.
+assert.match(pixelAdvice({ banding: 70, noise: 0.76 } as never).join(' '), /Strong banding was measured/);
+// Moderate noise callout.
+assert.match(pixelAdvice({ noise: 14 } as never).join(' '), /Moderate-to-high noise was measured/);
+// Clean source (no measured defects) produces no defect callouts.
+assert.equal(pixelAdvice({ banding: 0, noise: 1 } as never).length, 0);
+// HDR tag is surfaced as an explicit note.
+assert.match(pixelAdvice({ hdr: 'HDR PQ' } as never).join(' '), /HDR PQ is explicitly tagged/);
 assert.deepEqual(runtimeVersionArguments('ffmpeg'), ['-version']);
 assert.deepEqual(runtimeVersionArguments('ffprobe'), ['-version']);
 assert.deepEqual(runtimeVersionArguments('vspipe'), ['--version']);

@@ -366,6 +366,46 @@ export function sourceVerdict(analysis: SourceAnalysis) {
   return `${cadence} ${color}`;
 }
 
+// Honest, plain-language callouts that reconcile the *container tag* with what the
+// decoded pixels actually show. Ported from the Rust rebuild's cf-advisor `pixel_advice`.
+// Each item is conservative: it states what was measured, not a command, and it only
+// fires when there is a real disagreement or a high-confidence reading worth surfacing.
+export function pixelAdvice(analysis: SourceAnalysis): string[] {
+  const notes: string[] = [];
+  const scan = analysis.scanEvidence;
+  const classification = scan?.classification ?? analysis.scanType;
+  const highConfidence = scan?.confidence === 'High' || scan?.confidence === 'Medium';
+  // 1. Container cadence tag vs. what the decoded frames actually look like.
+  if (analysis.scanType === 'Interlaced' && classification === 'Progressive' && highConfidence) {
+    notes.push(`Tagged interlaced, but the sampled frames look progressive. ${scan ? `${scan.progressive} of ${scan.progressive + scan.topFirst + scan.bottomFirst} sampled windows were progressive.` : ''} You may not need deinterlacing — verify in playback.`);
+  } else if (analysis.scanType === 'Progressive' && classification === 'Interlaced' && scan?.confidence === 'High') {
+    notes.push('Tagged progressive, but the decoded pixels show interlacing. Combing is likely present; a same-rate deinterlace is worth trying.');
+  } else if (classification === 'Mixed or uncertain' && scan) {
+    notes.push('The cadence mixes interlaced and progressive windows. Treat it as a review, not a defect: a conservative same-rate Bwdif is the safe starting point if playback shows combing.');
+  }
+  // 2. Banding measured in the pixels.
+  if (analysis.banding !== undefined && analysis.banding >= 20) {
+    notes.push(`Strong banding was measured in decoded gradients (${analysis.banding} on a 0–100 scale). Enabling Deband should help smooth sky, skin, and matte areas.`);
+  } else if (analysis.banding !== undefined && analysis.banding >= 8) {
+    notes.push(`Mild banding was measured (${analysis.banding}). It may be subtle in playback; enable Deband only if you can see it at full size.`);
+  }
+  // 3. Noise measured in the pixels.
+  if (analysis.noise !== undefined && analysis.noise >= 12) {
+    notes.push(`Moderate-to-high noise was measured (${analysis.noise}). A light Denoise (Balanced) should tidy shadows and grain without smearing detail.`);
+  } else if (analysis.noise !== undefined && analysis.noise >= 8) {
+    notes.push(`Mild noise was measured (${analysis.noise}). Fine-detail denoise is optional; inspect grain at output size first.`);
+  }
+  // 4. HDR tag vs. safe assumption.
+  if (analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG') {
+    notes.push(`${analysis.hdr} is explicitly tagged. Convert it to SDR for an SDR master, or keep the HDR signal if your target is HDR.`);
+  }
+  // 5. A freeze/opening issue the decoder flagged — review marker, not corruption.
+  if (analysis.openingIssue || analysis.freezeSample) {
+    notes.push('The decoder flagged a low-motion region. That is a review marker, not a defect: intentional stills and title cards are common. Play the region to confirm.');
+  }
+  return notes;
+}
+
 export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipRecipe> {
   const confirmedInterlace = analysis.scanType === 'Interlaced' && analysis.scanEvidence?.classification === 'Interlaced' && analysis.scanEvidence.confidence === 'High';
   const banding = analysis.banding ?? 0;
