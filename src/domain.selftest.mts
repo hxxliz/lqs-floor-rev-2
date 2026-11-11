@@ -41,6 +41,15 @@ assert.deepEqual(outputDimensions({ ...defaultRecipe(), masterSize: 'Custom', ma
 assert.deepEqual(orientedSourceDimensions(1920, 1080, 90), { width: 1080, height: 1920 });
 assert.deepEqual(outputDimensions({ ...defaultRecipe(), rotation: 90 }, 1920, 1080), { width: 1080, height: 1920 });
 assert.deepEqual(applyLook(defaultRecipe(), 'Soft / noisy source'), { ...defaultRecipe(), look: 'Soft / noisy source', denoise: 'Fine detail', denoiseStrength: 1.7, sharpen: 'Natural', sharpenStrength: 0.3, deband: true });
+// Evidence-aware applyLook: the 'Soft / noisy source' preset WANTS deband, so it
+// only fires when the brain measured banding >= 20. No analysis -> falls back to
+// the preset intent (deband true). Clean source (banding 0) -> deband suppressed.
+const cleanSrc = { ...defaultRecipe() };
+assert.equal(applyLook(cleanSrc, 'Soft / noisy source', { banding: 0, noise: 2 } as never).deband, false);
+assert.equal(applyLook(cleanSrc, 'Soft / noisy source', { banding: 30, noise: 2 } as never).deband, true);
+assert.equal(applyLook(cleanSrc, 'Soft / noisy source', undefined).deband, true);
+// Presets that intentionally skip deband stay off even with banding evidence.
+assert.equal(applyLook(cleanSrc, 'Crisp', { banding: 60, noise: 2 } as never).deband, false);
 assert.deepEqual(runtimeVersionArguments('ffmpeg'), ['-version']);
 assert.deepEqual(runtimeVersionArguments('ffprobe'), ['-version']);
 assert.deepEqual(runtimeVersionArguments('vspipe'), ['--version']);

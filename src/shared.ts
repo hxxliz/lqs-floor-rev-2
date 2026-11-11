@@ -416,12 +416,19 @@ export function formatTime(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${(safe % 60).toFixed(2).padStart(5, '0')}`;
 }
 
-export function applyLook(recipe: ClipRecipe, look: StudioLook): ClipRecipe {
+export function applyLook(recipe: ClipRecipe, look: StudioLook, analysis?: SourceAnalysis): ClipRecipe {
   const next = { ...recipe, look };
-  if (look === 'Natural') return { ...next, denoise: 'Balanced', denoiseStrength: 0.8, sharpen: 'Natural', sharpenStrength: 0.45, deband: false };
-  if (look === 'Crisp') return { ...next, denoise: 'Balanced', denoiseStrength: 0.45, sharpen: 'Adaptive', sharpenStrength: 0.75, deband: false };
-  if (look === 'Soft / noisy source') return { ...next, denoise: 'Fine detail', denoiseStrength: 1.7, sharpen: 'Natural', sharpenStrength: 0.3, deband: true };
-  if (look === 'Native VS detail recovery') return { ...next, denoise: 'Off', denoiseStrength: 0, sharpen: 'Off', sharpenStrength: 0, deband: false, restoration: 'Debilinear' };
+  // Evidence-aware deband: a preset that *wants* deband (deband: true) only turns
+  // it on if the brain actually measured banding (palette collapse >= 20). A preset
+  // that intentionally skips deband (deband: false) is preserved as-is. When no
+  // analysis is available (e.g. brain never ran), fall back to the preset's intent.
+  const banding = analysis?.banding;
+  const hasEvidence = typeof banding === 'number';
+  const wantDeband = (patch: { deband?: boolean }) => (patch.deband === true && hasEvidence ? banding >= 20 : patch.deband ?? false);
+  if (look === 'Natural') return { ...next, denoise: 'Balanced', denoiseStrength: 0.8, sharpen: 'Natural', sharpenStrength: 0.45, deband: wantDeband({ deband: false }) };
+  if (look === 'Crisp') return { ...next, denoise: 'Balanced', denoiseStrength: 0.45, sharpen: 'Adaptive', sharpenStrength: 0.75, deband: wantDeband({ deband: false }) };
+  if (look === 'Soft / noisy source') return { ...next, denoise: 'Fine detail', denoiseStrength: 1.7, sharpen: 'Natural', sharpenStrength: 0.3, deband: wantDeband({ deband: true }) };
+  if (look === 'Native VS detail recovery') return { ...next, denoise: 'Off', denoiseStrength: 0, sharpen: 'Off', sharpenStrength: 0, deband: wantDeband({ deband: false }), restoration: 'Debilinear' };
   return next;
 }
 

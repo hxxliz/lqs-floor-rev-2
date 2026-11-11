@@ -519,7 +519,7 @@ export default function App() {
         exportRoot={exportRootOverride ?? session.exportPath ?? preferences.exportPath} exporting={Boolean(exportStartedAt)} exportElapsed={exportElapsed} onChooseExportFolder={chooseExportFolder}
         onApplyRecipeToOtherClips={applyRecipeToOtherClips}
         onFind={() => setView('find')}
-        onLook={(look) => selectedClip && updateRecipe(applyLook(selectedClip.recipe, look))}
+        onLook={(look) => selectedClip && updateRecipe(applyLook(selectedClip.recipe, look, selectedSource?.sourceAnalysis))}
         onAspect={(aspectPreset) => { if (!selectedClip || !selectedSource) return; const oriented = orientedSourceDimensions(selectedSource.sourceAnalysis.width, selectedSource.sourceAnalysis.height, selectedClip.recipe.rotation); updateRecipe(fitCropToAspect({ ...selectedClip.recipe, aspectPreset }, oriented.width, oriented.height)); }}
         onCrop={(edge, value) => { if (!selectedClip || !selectedSource) return; const oriented = orientedSourceDimensions(selectedSource.sourceAnalysis.width, selectedSource.sourceAnalysis.height, selectedClip.recipe.rotation); updateRecipe(setCropEdge(selectedClip.recipe, edge, value, oriented.width, oriented.height)); }}
       />}
