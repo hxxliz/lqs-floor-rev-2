@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch } from './shared.ts';
+import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes } from './shared.ts';
 import { ensurePreferenceFolders } from './storage.ts';
 
 const storageRoot = await mkdtemp(path.join(tmpdir(), 'lqcf-storage-'));
@@ -65,6 +65,33 @@ assert.match(pixelAdvice({ noise: 14 } as never).join(' '), /Moderate-to-high no
 assert.equal(pixelAdvice({ banding: 0, noise: 1 } as never).length, 0);
 // HDR tag is surfaced as an explicit note.
 assert.match(pixelAdvice({ hdr: 'HDR PQ' } as never).join(' '), /HDR PQ is explicitly tagged/);
+// suggestedRecipes: no analysis -> single "Recommended" (recommended), no alternatives.
+const noAnalysis = suggestedRecipes(undefined as never);
+assert.equal(noAnalysis.length, 1);
+assert.equal(noAnalysis[0].name, 'Recommended');
+assert.equal(noAnalysis[0].recommended, true);
+assert.deepEqual(noAnalysis[0].patch, {});
+// Interlaced (high confidence) -> recommended Bwdif patch; alternatives offer Bwdif-hold-rate (when rec != Bwdif) or QTGMC Quality (when rec IS Bwdif), plus As-is.
+const confirmedInt = { scanType: 'Interlaced', fieldOrder: 'tt', hdr: 'SDR Rec.709', scanEvidence: { classification: 'Interlaced', confidence: 'High', sampledWindows: 3, sampledSeconds: 9, topFirst: 150, bottomFirst: 0, progressive: 4, uncertain: 2, repeatedFields: 0 } } as never;
+const intRecipes = suggestedRecipes(confirmedInt);
+assert.equal(intRecipes.length, 3);
+assert.equal(intRecipes[0].recommended, true);
+assert.equal(intRecipes[0].name, 'Recommended');
+assert.equal(intRecipes[0].patch.deinterlace, 'Bwdif');
+assert.equal(intRecipes[1].name, 'QTGMC Quality');
+assert.equal(intRecipes[1].confidence, 'High');
+assert.equal(intRecipes[1].patch.deinterlace, 'QTGMC Quality');
+assert.equal(intRecipes[2].name, 'As-is (no cleanup)');
+// Progressive with a fix (noise) -> recommended Conservative + one "As-is" alternative.
+const noisyProg = { scanType: 'Progressive', fieldOrder: 'tt', hdr: 'SDR Rec.709', scanEvidence: { classification: 'Progressive', confidence: 'High', sampledWindows: 3, sampledSeconds: 9, topFirst: 0, bottomFirst: 0, progressive: 150, uncertain: 2, repeatedFields: 0 }, noise: 14, banding: 0 } as never;
+const noisyProgRecipes = suggestedRecipes(noisyProg);
+assert.equal(noisyProgRecipes.length, 2);
+assert.equal(noisyProgRecipes[0].name, 'Recommended');
+assert.equal(noisyProgRecipes[1].name, 'As-is (no cleanup)');
+assert.deepEqual(noisyProgRecipes[1].patch, { deinterlace: 'Off', denoise: 'Off', denoiseStrength: 0, sharpen: 'Off', sharpenStrength: 0, deband: false, motion: 'Original', colorManagement: 'Preserve' });
+// Clean progressive (no fixes applied) -> single "Recommended" (no alternatives).
+const cleanProg = { scanType: 'Progressive', fieldOrder: 'tt', hdr: 'SDR Rec.709', scanEvidence: { classification: 'Progressive', confidence: 'High', sampledWindows: 3, sampledSeconds: 9, topFirst: 0, bottomFirst: 0, progressive: 150, uncertain: 2, repeatedFields: 0 }, noise: 1, banding: 0 } as never;
+assert.equal(suggestedRecipes(cleanProg).length, 1);
 assert.deepEqual(runtimeVersionArguments('ffmpeg'), ['-version']);
 assert.deepEqual(runtimeVersionArguments('ffprobe'), ['-version']);
 assert.deepEqual(runtimeVersionArguments('vspipe'), ['--version']);

@@ -20,6 +20,7 @@ import {
   readyWithRecipe,
   setCropEdge,
   suggestedRecipePatch,
+  suggestedRecipes,
   sourceGuidance,
   sourceGuidanceItems,
   sourceVerdict,
@@ -716,7 +717,11 @@ function ProcessClips(props: ProcessProps) {
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewPosition, setPreviewPosition] = useState(0);
   const [queueCollapsed, setQueueCollapsed] = useState(false);
+  const [recipeIndex, setRecipeIndex] = useState(0);
   const previewVideo = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    setRecipeIndex(0);
+  }, [props.clip?.id]);
   useEffect(() => {
     const element = previewVideo.current;
     if (!element || !props.clip) return;
@@ -740,6 +745,7 @@ function ProcessClips(props: ProcessProps) {
   const recipe = clip.recipe;
   const analysis = source.sourceAnalysis;
   const suggested = suggestedRecipePatch(analysis);
+  const recipes = suggestedRecipes(analysis);
   const guidanceItems = sourceGuidanceItems(analysis);
   const honestNotes = pixelAdvice(analysis);
   const dimensions = outputDimensions(recipe, source.sourceAnalysis.width, source.sourceAnalysis.height);
@@ -778,7 +784,7 @@ function ProcessClips(props: ProcessProps) {
           <button className="text-button" onClick={() => props.onRecipe({ cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0, aspectPreset: 'Free' })}>Reset crop</button>
           <InfoTip>The crop ratio sets the shape; Master Size sets the exported pixels. VapourSynth prepares 4:4:4, performs crop-aware resize, and keeps 16-bit 4:4:4 through cleanup. A blank custom height is derived without stretching.</InfoTip>
         </div>
-      <div className="analysis-guide"><div className="guidance-copy"><span>SOURCE GUIDANCE</span><b>{sourceVerdict(analysis)}</b>{honestNotes.length > 0 && <ul className="honest-notes" aria-label="What the decoded pixels actually show">{honestNotes.map((note) => <li key={note}>{note}</li>)}</ul>}<div className="guidance-signals"><i>{analysis.codec.toUpperCase()}</i><i>{analysis.pixelFormat} · {analysis.bitDepth}-bit</i><i>{analysis.scanEvidence ? `${analysis.scanEvidence.confidence} cadence confidence` : 'Cadence not resampled'}</i><i>{analysis.hdr}</i><i>{analysis.frameTiming?.kind ?? 'Timing not resampled'}</i>{Boolean(analysis.bitrate) && <i>{(analysis.bitrate / 1_000_000).toFixed(1)} Mbps · container only</i>}</div><details><summary>Review the evidence</summary><div className="guidance-cards">{guidanceItems.map((item) => <article key={`${item.title}-${item.evidence}`}><header><b>{item.title}</b><i className={`confidence-${item.confidence.toLowerCase()}`}>{item.confidence} confidence</i></header><p><strong>Evidence</strong>{item.evidence}</p><p><strong>Recommendation</strong>{item.recommendation}</p><p><strong>Check in playback</strong>{item.check}</p></article>)}</div></details><small>Apply Suggested Settings keeps subjective cleanup off, preserves original motion, and only enables cadence or color conversion when the stored evidence supports it.</small></div><div className="analysis-actions"><button className="ghost" onClick={() => props.onRecipe(suggested)}>Apply conservative settings</button><button className="ghost" disabled={!unfinishedOtherCount} onClick={props.onApplyRecipeToOtherClips}>Apply to {unfinishedOtherCount} unfinished clip{unfinishedOtherCount === 1 ? '' : 's'}</button></div></div>
+      <div className="analysis-guide"><div className="guidance-copy"><span>SOURCE GUIDANCE</span><b>{sourceVerdict(analysis)}</b>{honestNotes.length > 0 && <ul className="honest-notes" aria-label="What the decoded pixels actually show">{honestNotes.map((note) => <li key={note}>{note}</li>)}</ul>}<div className="guidance-signals"><i>{analysis.codec.toUpperCase()}</i><i>{analysis.pixelFormat} · {analysis.bitDepth}-bit</i><i>{analysis.scanEvidence ? `${analysis.scanEvidence.confidence} cadence confidence` : 'Cadence not resampled'}</i><i>{analysis.hdr}</i><i>{analysis.frameTiming?.kind ?? 'Timing not resampled'}</i>{Boolean(analysis.bitrate) && <i>{(analysis.bitrate / 1_000_000).toFixed(1)} Mbps · container only</i>}</div><details><summary>Review the evidence</summary><div className="guidance-cards">{guidanceItems.map((item) => <article key={`${item.title}-${item.evidence}`}><header><b>{item.title}</b><i className={`confidence-${item.confidence.toLowerCase()}`}>{item.confidence} confidence</i></header><p><strong>Evidence</strong>{item.evidence}</p><p><strong>Recommendation</strong>{item.recommendation}</p><p><strong>Check in playback</strong>{item.check}</p></article>)}</div></details><small>Apply Suggested Settings keeps subjective cleanup off, preserves original motion, and only enables cadence or color conversion when the stored evidence supports it.</small></div><div className="analysis-actions"><button className="ghost" onClick={() => props.onRecipe(suggested)}>Apply conservative settings</button>{recipes.length > 1 && (<div className="recipe-alternatives"><label className="recipe-alternatives-label"><span>RECIPE ALTERNATIVES</span><select value={Math.min(recipeIndex, recipes.length - 1)} onChange={(event) => setRecipeIndex(Number(event.target.value))}>{recipes.map((alt, index) => <option key={alt.name} value={index}>{alt.name} · {alt.confidence}</option>)}</select></label><p className="recipe-alternatives-why">{recipes[Math.min(recipeIndex, recipes.length - 1)]?.why ?? ''}</p><button className="ghost" onClick={() => { const alt = recipes[Math.min(recipeIndex, recipes.length - 1)]; if (alt) props.onRecipe(alt.patch); }}>Apply selected</button></div>)}<button className="ghost" disabled={!unfinishedOtherCount} onClick={props.onApplyRecipeToOtherClips}>Apply to {unfinishedOtherCount} unfinished clip{unfinishedOtherCount === 1 ? '' : 's'}</button></div></div>
       <div className="recipe-settings-grid">
         <article className="recipe-section"><div className="recipe-section-head"><div><span>OUTPUT</span><h3>Master file</h3></div><p>Choose the delivered format and actual exported pixel size.</p></div><div className="recipe-section-fields">
           <Field label="OUTPUT FORMAT"><select value={recipe.outputFormat} onChange={(event) => props.onRecipe({ outputFormat: event.target.value as ClipRecipe['outputFormat'] })}>{outputFormats.map((value) => <option key={value} value={value}>{value === 'MP4' ? 'High-quality MP4 · H.264 CRF 12' : value === 'ProRes 422' ? 'Photoshop MOV · ProRes 422 HQ' : 'Photoshop MOV · ProRes 4444'}</option>)}</select></Field>

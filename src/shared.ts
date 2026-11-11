@@ -406,6 +406,67 @@ export function pixelAdvice(analysis: SourceAnalysis): string[] {
   return notes;
 }
 
+export interface SuggestedRecipe {
+  name: string;
+  confidence: 'High' | 'Medium';
+  why: string;
+  patch: Partial<ClipRecipe>;
+  recommended?: boolean;
+}
+
+// Ranked recipe alternatives. Ported from the Rust rebuild's cf-advisor `suggest_recipes`.
+// Honest, never random: the recommended plan comes from the measured evidence, and each
+// alternative is a *genuinely different* strategy the editor might prefer:
+//   * The recommended plan (evidence-based) is always first.
+//   * A deinterlace alternative is offered only for a genuinely interlaced source —
+//     the Electron model has no Weave, so the honest "hold-rate" option is Bwdif, and the
+//     quality/interpolation option is QTGMC Quality. We offer whichever differs from the
+//     recommended pick, so the two are never the same recipe in a different name.
+//   * An "As-is (no cleanup)" alternative is offered only when the recommended plan
+//     applies at least one fix — the editor may want the untouched source.
+export function suggestedRecipes(analysis: SourceAnalysis | undefined): SuggestedRecipe[] {
+  if (!analysis) {
+    return [{ name: 'Recommended', confidence: 'High', why: 'No source analysis available yet — run the source check to get evidence-based suggestions.', patch: {}, recommended: true }];
+  }
+  const primary: SuggestedRecipe = {
+    name: 'Recommended',
+    confidence: 'High',
+    why: 'Derived from the measured cadence, banding, and noise evidence.',
+    patch: suggestedRecipePatch(analysis),
+    recommended: true,
+  };
+  const out = [primary];
+
+  // A source is "genuinely interlaced" when the container tag and a high/medium
+  // confidence decoded-pixel reading agree on interlacing.
+  const scan = analysis.scanEvidence;
+  const classification = scan?.classification ?? analysis.scanType;
+  const genuinelyInterlaced = analysis.scanType === 'Interlaced' && classification === 'Interlaced' && scan?.confidence !== 'Low';
+
+  const recommendedDeinterlace = (primary.patch.deinterlace ?? 'Off') as DeinterlaceChoice;
+  if (genuinelyInterlaced && recommendedDeinterlace !== 'Off') {
+    // Offer the alternative deinterlace that is genuinely different from the pick.
+    const alt: DeinterlaceChoice = recommendedDeinterlace === 'Bwdif' ? 'QTGMC Quality' : 'Bwdif';
+    const altWhy = alt === 'QTGMC Quality'
+      ? 'Interpolates motion for a smoother result; use when you want a progressive, high-quality master and the extra CPU cost is fine.'
+      : 'Same-rate, conservative deinterlace — no motion interpolation. The safe starting point when the source rate should be preserved.';
+    out.push({ name: alt === 'QTGMC Quality' ? 'QTGMC Quality' : 'Bwdif (hold rate)', confidence: 'High', why: altWhy, patch: { deinterlace: alt } });
+  }
+
+  // The recommended plan "applies a fix" when it enables any cleanup beyond the load.
+  const p = primary.patch;
+  const appliesAFix = p.deinterlace !== undefined && p.deinterlace !== 'Off'
+    || p.denoise !== undefined && p.denoise !== 'Off'
+    || (p.sharpen !== undefined && p.sharpen !== 'Off')
+    || p.deband === true
+    || (p.colorManagement !== undefined && p.colorManagement !== 'Auto');
+  if (appliesAFix) {
+    out.push({ name: 'As-is (no cleanup)', confidence: 'Medium', why: 'Load and play the source exactly as tagged — skip the recommended cleanup if you want the untouched source.', patch: { deinterlace: 'Off', denoise: 'Off', denoiseStrength: 0, sharpen: 'Off', sharpenStrength: 0, deband: false, motion: 'Original', colorManagement: 'Preserve' } });
+  }
+
+  return out;
+}
+
 export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipRecipe> {
   const confirmedInterlace = analysis.scanType === 'Interlaced' && analysis.scanEvidence?.classification === 'Interlaced' && analysis.scanEvidence.confidence === 'High';
   const banding = analysis.banding ?? 0;
