@@ -9,9 +9,13 @@ __pycache__/
 *.pyc
 
 # Bundled binaries are backed up as versioned GitHub release downloads.
+# The manifest + schema are committed so the toolchain versions are auditable in git;
+# the actual runtime/win32-x64/ binaries stay out (assembled on the build machine).
 runtime/**
 !runtime/win32-x64/
 !runtime/win32-x64/README.md
+!runtime/lock.json
+!runtime/runtime.lock.schema.json
 
 .env
 .env.*

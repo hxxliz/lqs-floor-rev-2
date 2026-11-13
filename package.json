@@ -13,7 +13,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "typecheck": "tsc --noEmit",
-    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/domain.selftest.mts && node src/sidebar.selftest.cjs"
+    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/domain.selftest.mts && node src/sidebar.selftest.cjs && node scripts/verify-runtime-lock.cjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "latest",

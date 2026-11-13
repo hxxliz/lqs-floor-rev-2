@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "./runtime.lock.schema.json",
+  "title": "Vapormint bundled media runtime lockfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["platform", "python", "ffmpeg", "yt-dlp", "vapoursynth", "plugins"],
+  "properties": {
+    "name": { "type": "string" },
+    "platform": { "enum": ["win32-x64", "darwin-arm64", "darwin-x64", "linux-x64"] },
+    "note": { "type": "array", "items": { "type": "string" } },
+    "python": {
+      "type": "object",
+      "required": ["version", "distribution", "url"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "build": { "type": "string" },
+        "distribution": { "type": "string" },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "ffmpeg": {
+      "type": "object",
+      "required": ["version", "distribution", "url", "binaries"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "build": { "type": "string" },
+        "license": { "type": "string" },
+        "distribution": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "binaries": { "type": "array", "items": { "type": "string" }, "minItems": 2 },
+        "shipped_dlls": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "yt-dlp": {
+      "type": "object",
+      "required": ["version", "distribution", "url", "binary"],
+      "properties": {
+        "version": { "type": "string" },
+        "license": { "type": "string" },
+        "distribution": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "binary": { "type": "string" }
+      }
+    },
+    "vapoursynth": {
+      "type": "object",
+      "required": ["core", "core_package", "core_version", "index"],
+      "properties": {
+        "core": { "type": "string", "pattern": "^R\\d+$" },
+        "core_package": { "type": "string" },
+        "core_version": { "type": "string" },
+        "note": { "type": "string" },
+        "index": { "type": "string", "format": "uri" }
+      }
+    },
+    "plugins": {
+      "type": "object",
+      "required": ["index", "packages"],
+      "properties": {
+        "note": { "type": "string" },
+        "index": { "type": "string", "format": "uri" },
+        "required_by_probe": { "type": "object", "additionalProperties": { "type": "string" } },
+        "packages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "pip", "version"],
+            "properties": {
+              "name": { "type": "string" },
+              "pip": { "type": "string" },
+              "version": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "python_deps": {
+      "type": "object",
+      "required": ["packages"],
+      "properties": {
+        "note": { "type": "string" },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pip", "version"],
+            "properties": {
+              "pip": { "type": "string" },
+              "version": { "type": "string" },
+              "role": { "type": "string" },
+              "distInfo": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "assembled_on": { "type": "string" },
+        "checks": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
