@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import squirrelStartup from 'electron-squirrel-startup';
-import { autoUpdater } from 'electron-updater';
 import { watch, type FSWatcher, createWriteStream } from 'node:fs';
 import { access, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { constants, existsSync } from 'node:fs';
@@ -498,24 +497,49 @@ else void app.whenReady().then(async () => {
   ipcMain.handle('task:cancel', () => { exportController?.abort(); taskController?.abort(); });
 
   // ---- Updates ----
+  // This build ships via Squirrel (Update.exe + .nupkg + RELEASES), which has no
+  // electron-builder `latest.yml` feed for electron-updater to read. So the in-app
+  // check talks to the GitHub Releases API directly: it finds the newest non-draft
+  // release, compares its tag to the running version, and deep-links to the release
+  // page where VapormintSetup.exe lives. That is the standard pattern for Squirrel
+  // apps that don't run a signed Squirrel feed server.
+  const GITHUB_REPO = 'hxxliz/lqs-floor-rev-2';
+  const RELEASE_PAGE = `https://github.com/${GITHUB_REPO}/releases`;
+  const semver = (v: string) => v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const isNewer = (a: string, b: string) => { const x = semver(a), y = semver(b); for (let i = 0; i < 3; i++) { if ((x[i] ?? 0) > (y[i] ?? 0)) return true; if ((x[i] ?? 0) < (y[i] ?? 0)) return false; } return false; };
+  let latestRelease: { tag: string; url: string } | null = null;
   const sendUpdate = (info: UpdateInfo) => mainWindow?.webContents.send('update:progress', info);
-  autoUpdater.on('checking-for-update', () => sendUpdate({ status: 'downloading', version: app.getVersion(), message: 'Checking for updates…', percent: 0 }));
-  autoUpdater.on('update-available', (info) => sendUpdate({ status: 'available', version: info.version, message: `Version ${info.version} is available`, percent: 0 }));
-  autoUpdater.on('update-not-available', () => sendUpdate({ status: 'current', version: app.getVersion(), message: `You are on the latest version (${app.getVersion()})`, percent: 0 }));
-  autoUpdater.on('error', () => sendUpdate({ status: 'error', version: app.getVersion(), message: 'Update check failed', percent: 0 }));
-  autoUpdater.on('download-progress', (p) => sendUpdate({ status: 'downloading', version: app.getVersion(), message: `Downloading update… ${Math.round(p.percent)}%`, percent: p.percent }));
-  autoUpdater.on('update-downloaded', (info) => sendUpdate({ status: 'downloaded', version: info.version, message: `Version ${info.version} is ready — restart to install`, percent: 100 }));
 
   ipcMain.handle('update:check', async () => {
+    const current = app.getVersion();
     try {
-      await autoUpdater.checkForUpdatesAndNotify();
-      return { status: 'current', version: app.getVersion(), message: 'Checked' };
+      sendUpdate({ status: 'downloading', version: current, message: 'Checking for updates…', percent: 0 });
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+      const releases = (await res.json()) as Array<{ tag_name: string; html_url: string; draft?: boolean; prerelease?: boolean }>;
+      const stable = releases.find((r) => !r.draft);
+      if (!stable) {
+        sendUpdate({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
+        return { status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 };
+      }
+      latestRelease = { tag: stable.tag_name, url: stable.html_url };
+      if (isNewer(stable.tag_name, current)) {
+        sendUpdate({ status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 });
+        return { status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 };
+      }
+      sendUpdate({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
+      return { status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 };
     } catch (e) {
-      return { status: 'error', version: app.getVersion(), message: String(e) };
+      const msg = e instanceof Error ? e.message : String(e);
+      sendUpdate({ status: 'error', version: current, message: `Update check failed (${msg})`, percent: 0 });
+      return { status: 'error', version: current, message: `Update check failed (${msg})`, percent: 0 };
     }
   });
-  ipcMain.handle('update:apply', () => {
-    autoUpdater.quitAndInstall();
+  ipcMain.handle('update:apply', async () => {
+    // Open the release page so the user can grab the installer. Squirrel apps that
+    // don't run a feed server route the "install" through the release page.
+    const url = latestRelease?.url ?? RELEASE_PAGE;
+    await shell.openExternal(url);
   });
 
   // ---- Feedback ----
