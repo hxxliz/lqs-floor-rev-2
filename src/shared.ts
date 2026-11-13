@@ -317,6 +317,13 @@ export interface DesktopApi {
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
   onTaskProgress(callback: (progress: TaskProgress) => void): () => void;
   onWatchSources(callback: (sources: StudioSource[]) => void): () => void;
+  checkForUpdates(): Promise<UpdateInfo>;
+  applyUpdate(): Promise<void>;
+  onUpdateProgress(callback: (info: UpdateInfo) => void): () => void;
+  checkToolUpdates(): Promise<ToolVersionInfo[]>;
+  updateTool(name: string): Promise<{ ok: boolean; message: string; version?: string }>;
+  submitFeedback(report: FeedbackReport): Promise<{ ok: boolean; message: string }>;
+  openIssue(url: string): Promise<void>;
 }
 
 export const defaultRecipe = (): ClipRecipe => ({
@@ -417,7 +424,7 @@ export function sourceGuidance(analysis: SourceAnalysis): string[] {
 
 export function sourceVerdict(analysis: SourceAnalysis) {
   const scan = analysis.scanEvidence;
-  const cadence = scan?.classification === 'Interlaced' && scan.confidence === 'High' && analysis.scanType === 'Interlaced' ? 'Interlacing has strong sampled and metadata evidence.' : scan?.classification === 'Progressive' && scan.confidence === 'High' && analysis.scanType === 'Progressive' ? 'Progressive cadence has strong sampled and metadata evidence.' : 'Cadence needs visual confirmation; no repair will be enabled automatically.';
+  const cadence = scan?.classification === 'Interlaced' && scan.confidence === 'High' && analysis.scanType === 'Interlaced' ? 'Interlacing confirmed — deinterlacing is enabled.' : scan?.classification === 'Progressive' && scan.confidence === 'High' && analysis.scanType === 'Progressive' ? 'Progressive (normal) footage — no deinterlacing needed.' : 'Cadence not yet confirmed by sampling — self-tune will check the rendered preview for interlacing.';
   const color = analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG' ? `${analysis.hdr} transfer is explicitly tagged.` : analysis.hdr === 'Unknown' ? 'Color tags are incomplete; verify the image.' : 'Source is tagged SDR.';
   return `${cadence} ${color}`;
 }
@@ -878,4 +885,37 @@ export function buildReceipt(args: {
 
 export function receiptFileName(clip: SessionClip) {
   return `${safeFileName(clip.name)}.receipt.json`;
+}
+
+
+export interface ToolVersionInfo {
+  /** Tool key: 'yt-dlp' | 'ffmpeg' | 'ffprobe'. */
+  name: string;
+  /** The version currently installed in the bundled runtime (empty if missing). */
+  current: string;
+  /** The latest version published upstream (empty if the check failed). */
+  latest: string;
+  /** True when a newer version is available. */
+  updateAvailable: boolean;
+  /** True when the version check itself failed (offline, etc.). */
+  checkFailed: boolean;
+  /** Human note explaining the current state. */
+  note: string;
+}
+
+export interface UpdateInfo {
+  status: 'current' | 'available' | 'downloading' | 'downloaded' | 'error';
+  version: string;
+  message: string;
+  percent: number;
+}
+
+export interface FeedbackReport {
+  kind: 'bug' | 'feature';
+  title: string;
+  details: string;
+  email: string;
+  version: string;
+  platform: string;
+  createdAt: string;
 }

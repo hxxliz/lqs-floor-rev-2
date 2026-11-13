@@ -123,7 +123,7 @@ assert.equal(frameTimingEvidence([[0, 1 / 24, 2 / 24, 3 / 24, 4 / 24, 5 / 24, 6 
 assert.equal(frameTimingEvidence([[0, .04, .08, .12, .20, .24, .28, .32, .40, .44, .48, .52, .60]]).kind, 'Variable sample');
 const unknownAnalysis = { hdr: 'Unknown', scanType: 'Unknown', fieldOrder: 'unknown', colorSpace: 'Unspecified', duration: 3, width: 1920, height: 1080, fps: 30, codec: 'h264', format: 'mp4', pixelFormat: 'yuv420p', bitDepth: 8, bitrate: 1000, colorTransfer: 'unknown', variableFrameRate: false, qualitySummary: '' } as const;
 const guidance = sourceGuidance(unknownAnalysis).join(' ');
-assert.match(sourceVerdict(unknownAnalysis), /Cadence needs visual confirmation/);
+assert.match(sourceVerdict(unknownAnalysis), /Cadence not yet confirmed by sampling/);
 assert.match(guidance, /Cadence needs review|Unknown cadence/);
 assert.match(guidance, /Frame timing not verified/);
 assert.match(guidance, /do not measure noise, sharpness/);

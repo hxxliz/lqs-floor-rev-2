@@ -1,40 +1,76 @@
-# LQ's Cutting Floor
+# Vapormint
 
-## Latest app and backup: 0.3.24
+Cross-platform desktop video sifting and VapourSynth processing studio.
+Version 2.0.0 — the "cinematic darkroom" redesign.
 
-- [Download the app and bundled files](https://github.com/hxxliz/lqs-floor-rev-2/releases/tag/v0.3.24).
-- [First-use guide](README_FIRST_USE.txt) and [full Windows guide](README_WINDOWS.txt).
-- For installation, download `LQsCuttingFloorSetup.exe` (the original installer, renamed for GitHub downloads). To use the update helper, rename it back to `LQ's Cutting Floor.exe` and keep it with the release's `update_windows.bat`, `update_windows.ps1`, and `SHA256SUMS.txt`.
-- The portable ZIP contains the complete packaged app. Extract the whole ZIP before opening `LQsCuttingFloor.exe`.
-- This repository contains the source, build configuration, documentation, and saved design context. The release includes the original installer, update package, portable app ZIP, and bundled runtime ZIP. Generated caches and duplicate build output are omitted.
+## What's new in 2.0
 
-To rebuild from a fresh checkout, download `runtime-win32-x64-0.3.24.zip` from the release and extract it into this checkout's `runtime/` folder. The resulting path must be `runtime/win32-x64/python.exe`. Then run `build_windows.bat` with 64-bit Node.js 22 or newer installed.
+### Self-Tune (auto-preview)
+- When you open a clip, Vapormint automatically renders a 1-second preview from the current recipe, measures the pixels (interlacing, noise, banding, sharpness), and writes evidence-based fixes back into the recipe.
+- You can see exactly what the analysis found under "Why these settings?" — interlacing evidence, noise level, banding detection, and sharpening rationale.
+- Hover any recipe field for a plain-language tooltip.
+- "Re-tune this clip" re-runs the analysis if you change settings manually.
 
-Windows-first Electron port of the macOS cutting-floor workflow. It imports local videos, probes metadata with FFprobe, provides frame-aligned I/O marking and a shared clip queue, persists version-6 sessions atomically, and exports through VapourSynth piped into FFmpeg. GIF output is intentionally absent.
+### Source Guidance
+- Plain-language verdicts: "Interlacing confirmed", "Progressive (normal) footage", "Cadence not yet confirmed by sampling".
+- "What to look for" checklist with actionable steps.
+- "Video stats" details section with all measured values.
 
-## Run
+### Cinematic Darkroom UI
+- **Space Grotesk** (300–600) for all text, **Space Mono** for technical labels and timestamps.
+- Near-black canvas (#080808) with **celluloid cream** (#ece4b4) as the single warm accent.
+- Zero border-radius, zero box-shadows, zero gradients. Depth from value contrast and 1px hairlines.
+- Light theme: warm paper (#f5f2ec) with deep gold accent.
+- All hardcoded colors replaced with CSS custom properties.
 
+### Updated Onboarding
+- 4-step welcome guide with cinematic language.
+- Step counter in Space Mono.
+- Flat, angular layout matching the new design system.
+
+### Auto-Updater
+- Built-in update check via electron-updater.
+- "Check for updates" in Settings.
+
+### Feedback
+- Report a bug or suggest a feature from Settings.
+- Saved locally as JSON in the app data folder.
+
+### Diagnostics
+- All console output logged to `diagnostics.log` in the app data folder.
+- Export and preview-tune failures logged with full context.
+
+### Bug Fixes
+- `brainPaths()` — handles packaged builds where `import.meta.url` is unavailable (asar).
+- `exportClip` — falls back to saved preferences when `exportRoot` is missing.
+- `previewTune` — same fallback for auto-tune preview.
+- `squirrelStartup` import — properly wrapped to prevent crash on missing module.
+- All user-facing strings: "LQ's Cutting Floor" → "Vapormint".
+
+## Install (Windows)
+1. Run `VapormintSetup.exe`.
+2. If SmartScreen warns, click **More info** → **Run anyway** (unsigned build).
+3. No separate Python, FFmpeg, VapourSynth, or plugin install needed — all bundled.
+
+## Shortcuts
+| Key | Action |
+|-----|--------|
+| `I` / `O` | Mark In / Out |
+| `Enter` | Queue marked clip |
+| `Space` | Play / Pause |
+| `←` / `→` | One frame (hold `Shift` for one second) |
+
+## Build from source
 ```powershell
 npm install
-npm start
-```
-
-The Windows package includes its own FFmpeg, FFprobe, Python, VapourSynth, VSPipe, and recipe plugins. The sidebar verifies the executables and the complete plugin graph when the app starts; no separate media-tool installation is required.
-
-## Find Moments shortcuts
-
-- `I`: mark in
-- `O`: mark out
-- `Enter`: enter the marked clip into the project queue
-- `Space`: play/pause
-- `Left` / `Right`: one frame; hold `Shift` for one second
-
-The project queue collapses from its header. Originals are never modified.
-
-## Build a Windows package
-
-```powershell
 npm run check
 npm run typecheck
 npm run make
 ```
+
+## Files
+| Path | Purpose |
+|------|---------|
+| `VapormintSetup.exe` | Windows installer (Squirrel) |
+| `README.md` | This file |
+| `MAC_PORT_INSTRUCTIONS.md` | Ordered edit list for porting to macOS |

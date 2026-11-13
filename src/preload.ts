@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopApi, ExportProgress, ExportRequest, PixelEvidence, PreviewSettings, StudioPreferences, StudioSession, StudioSource, TaskProgress } from './shared';
+import type { DesktopApi, ExportProgress, ExportRequest, FeedbackReport, PixelEvidence, PreviewSettings, StudioPreferences, StudioSession, StudioSource, TaskProgress, UpdateInfo } from './shared';
 
 const api: DesktopApi = {
   loadWorkspace: () => ipcRenderer.invoke('workspace:load'),
@@ -37,8 +37,19 @@ const api: DesktopApi = {
   onWatchSources: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, sources: StudioSource[]) => callback(sources);
     ipcRenderer.on('watch:sources', listener);
-    return () => ipcRenderer.removeListener('watch:sources', listener);
+    return () => { ipcRenderer.removeListener('watch:sources', listener); };
   },
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  applyUpdate: () => ipcRenderer.invoke('update:apply'),
+  onUpdateProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, info: UpdateInfo) => callback(info);
+    ipcRenderer.on('update:progress', listener);
+    return () => { ipcRenderer.removeListener('update:progress', listener); };
+  },
+  checkToolUpdates: () => ipcRenderer.invoke('tools:check'),
+  updateTool: (name: string) => ipcRenderer.invoke('tools:update', name),
+  submitFeedback: (report: FeedbackReport) => ipcRenderer.invoke('feedback:submit', report),
+  openIssue: (url: string) => ipcRenderer.invoke('feedback:open', url),
 };
 
 contextBridge.exposeInMainWorld('cuttingFloor', api);

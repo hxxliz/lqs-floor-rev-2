@@ -89,7 +89,7 @@ core.std.BlankClip(width=64, height=64, length=1, format=vs.YUV420P8).set_output
 `;
 
 async function verifyPlugins(vspipe: string) {
-  const folder = await mkdtemp(path.join(tmpdir(), 'cutting-floor-runtime-'));
+  const folder = await mkdtemp(path.join(tmpdir(), 'vapormint-runtime-'));
   const script = path.join(folder, 'probe.vpy');
   try {
     await writeFile(script, pluginProbe, 'utf8');
@@ -103,13 +103,14 @@ async function verifyPlugins(vspipe: string) {
 // next to the app source (scripts/cf_analysis.py) in dev and is copied into
 // resources/ at build time (see package.json "files").
 function brainPaths() {
-  const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.join(here, '..', 'scripts', 'cf_analysis.py'),
-    path.join(here, 'scripts', 'cf_analysis.py'),
     path.join(process.resourcesPath, 'scripts', 'cf_analysis.py'),
     path.join(app.getAppPath(), 'scripts', 'cf_analysis.py'),
   ];
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    candidates.unshift(path.join(here, '..', 'scripts', 'cf_analysis.py'), path.join(here, 'scripts', 'cf_analysis.py'));
+  } catch { /* import.meta.url unavailable — rely on resourcesPath/appPath */ }
   for (const candidate of candidates) { try { if (existsSync(candidate)) return candidate; } catch { /* keep searching */ } }
   return candidates[0];
 }
@@ -376,7 +377,7 @@ export function compileVapourSynthScript(request: ExportRequest) {
   const widthRatio = Math.max(0.02, 1 - recipe.cropLeft - recipe.cropRight);
   const heightRatio = Math.max(0.02, 1 - recipe.cropTop - recipe.cropBottom);
   const lines = [
-    "# LQ's Cutting Floor — generated VapourSynth recipe",
+    "# Vapormint — generated VapourSynth recipe",
     '# Plugins: BestSource, QTGMC, VIVTC, BM3D, Bwdif, CAS, MVTools, Descale, core.resize',
     'import vapoursynth as vs',
   ];
@@ -577,7 +578,7 @@ async function extractFrames(request: ExportRequest, outputPath: string, signal:
 
 export async function processClip(request: ExportRequest, outputPath: string, signal: AbortSignal, onProgress: (percent: number, message: string) => void): Promise<ProcessingResult> {
   onProgress(1, 'Preparing export workspace');
-  const work = await mkdtemp(path.join(tmpdir(), 'lq-cutting-floor-'));
+  const work = await mkdtemp(path.join(tmpdir(), 'vapormint-'));
   const script = compileVapourSynthScript(request);
   const scriptPath = path.join(work, `${request.clip.id}.vpy`);
   const extension = path.extname(outputPath);

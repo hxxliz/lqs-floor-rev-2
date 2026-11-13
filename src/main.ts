@@ -1,14 +1,28 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import squirrelStartup from 'electron-squirrel-startup';
-import { watch, type FSWatcher } from 'node:fs';
-import { access, cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { autoUpdater } from 'electron-updater';
+import { watch, type FSWatcher, createWriteStream } from 'node:fs';
+import { access, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { constants, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { spawn } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
-import { buildReceipt, receiptFileName, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type WorkspaceState } from './shared';
+import { buildReceipt, receiptFileName, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
 import { ensurePreferenceFolders } from './storage';
 
 if (squirrelStartup) app.quit();
+
+// Redirect console.log/error/warn to a log file so diagnostics survive
+const diagLogPath = path.join(app.getPath('userData'), 'diagnostics.log');
+const diagStream = createWriteStream(diagLogPath, { flags: 'a' });
+const origLog = console.log.bind(console);
+const origErr = console.error.bind(console);
+const origWarn = console.warn.bind(console);
+console.log = (...args: unknown[]) => { origLog(...args); diagStream.write(new Date().toISOString() + ' [LOG] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n'); };
+console.error = (...args: unknown[]) => { origErr(...args); diagStream.write(new Date().toISOString() + ' [ERR] ' + args.map(a => typeof a === 'object' ? (a instanceof Error ? a.stack ?? a.message : JSON.stringify(a)) : String(a)).join(' ') + '\n'); };
+console.warn = (...args: unknown[]) => { origWarn(...args); diagStream.write(new Date().toISOString() + ' [WRN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n'); };
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -42,16 +56,16 @@ function stopBackgroundWork() {
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
 const legacySessionPath = () => path.join(app.getPath('userData'), 'current-session.json');
 const defaultPreferences = (): StudioPreferences => ({
-  libraryPath: path.join(app.getPath('documents'), "LQ's Cutting Floor", 'Projects'),
-  downloadPath: path.join(app.getPath('videos'), "LQ's Cutting Floor", 'Downloaded Masters'),
-  exportPath: path.join(app.getPath('videos'), "LQ's Cutting Floor", 'Finished Clips'),
+  libraryPath: path.join(app.getPath('documents'), "Vapormint", 'Projects'),
+  downloadPath: path.join(app.getPath('videos'), "Vapormint", 'Downloaded Masters'),
+  exportPath: path.join(app.getPath('videos'), "Vapormint", 'Finished Clips'),
   expertMode: false,
   theme: 'dark',
   onboardingComplete: false,
 });
 const fallbackPreferences = (): StudioPreferences => {
   const localAppData = process.env.LOCALAPPDATA;
-  const root = path.join(localAppData && path.isAbsolute(localAppData) ? localAppData : app.getPath('userData'), "LQ's Cutting Floor");
+  const root = path.join(localAppData && path.isAbsolute(localAppData) ? localAppData : app.getPath('userData'), "Vapormint");
   return {
     libraryPath: path.join(root, 'Projects'),
     downloadPath: path.join(root, 'Downloaded Masters'),
@@ -62,7 +76,7 @@ const fallbackPreferences = (): StudioPreferences => {
   };
 };
 
-const emptySession = (name = 'Untitled Cutting Floor'): StudioSession => ({
+const emptySession = (name = 'Untitled Vapormint'): StudioSession => ({
   version: 6, id: crypto.randomUUID(), name, created: new Date().toISOString(), updated: new Date().toISOString(), sources: [], clips: [], watchFolders: [],
 });
 
@@ -89,7 +103,7 @@ function normalizeSession(value: Partial<StudioSession>): StudioSession {
   return {
     version: 6,
     id: value.id ?? crypto.randomUUID(),
-    name: value.name?.trim() || 'Untitled Cutting Floor',
+    name: value.name?.trim() || 'Untitled Vapormint',
     created: value.created ?? now,
     updated: value.updated ?? value.created ?? now,
     activeSourceId: value.activeSourceId,
@@ -178,7 +192,7 @@ async function loadWorkspace() {
 
 async function createProject(name: string) {
   const preferences = await loadPreferences();
-  const session = await writeProject(emptySession(name.slice(0, 100).trim() || 'Untitled Cutting Floor'), preferences);
+  const session = await writeProject(emptySession(name.slice(0, 100).trim() || 'Untitled Vapormint'), preferences);
   const nextPreferences = await persistPreferences({ ...preferences, activeProjectId: session.id });
   activeSession = session;
   configureWatchers(session, nextPreferences);
@@ -208,7 +222,7 @@ async function deleteProject(id: string) {
   const confirmation = await dialog.showMessageBox(mainWindow!, {
     type: 'warning',
     title: 'Delete project?',
-    message: `Delete “${project.name}” from the Cutting Floor library?`,
+    message: `Delete “${project.name}” from the Vapormint library?`,
     detail: 'The session, cached thumbnails, and playback copies will be removed. Original source videos and finished exports will not be deleted.',
     buttons: ['Delete project', 'Cancel'],
     defaultId: 1,
@@ -336,7 +350,7 @@ async function changeLibrary(session: StudioSession, libraryPath: string) {
   const confirmation = await dialog.showMessageBox(mainWindow!, {
     type: 'question',
     title: 'Change project library',
-    message: 'How should Cutting Floor use the new project library?',
+    message: 'How should Vapormint use the new project library?',
     detail: 'Copy keeps the existing library as a backup. Switch only opens projects already stored in the selected folder.',
     buttons: ['Copy projects and switch', 'Switch without copying', 'Cancel'],
     defaultId: 0,
@@ -376,7 +390,10 @@ async function uniqueOutput(folder: string, name: string, extension: string) {
 async function exportClip(request: ExportRequest) {
   try { await access(request.source.sourcePath); } catch { throw new Error(`The source for ${request.clip.name} moved or was deleted. Relink it before exporting.`); }
   const extension = request.clip.recipe.outputFormat === 'MP4' ? 'mp4' : 'mov';
-  const folder = path.join(request.exportRoot, safeFileName(request.projectName));
+  const prefs = await loadPreferences();
+  const exportRoot = request.exportRoot || prefs.exportPath;
+  console.log('[exportClip] exportRoot=', JSON.stringify(exportRoot), 'sourcePath=', JSON.stringify(request.source?.sourcePath), 'projectName=', JSON.stringify(request.projectName));
+  const folder = path.join(exportRoot, safeFileName(request.projectName));
   await mkdir(folder, { recursive: true });
   const outputPath = await uniqueOutput(folder, safeFileName(request.clip.name), extension);
   exportController?.abort();
@@ -420,17 +437,17 @@ function applyWindowTheme(theme: StudioPreferences['theme']) {
 
 function createWindow(theme: StudioPreferences['theme'] = 'dark') {
   const colors = windowTheme(theme);
-  mainWindow = new BrowserWindow({ width: 1500, height: 940, minWidth: 960, minHeight: 620, backgroundColor: colors.background, titleBarStyle: 'hidden', titleBarOverlay: colors.overlay, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  mainWindow = new BrowserWindow({ width: 1500, height: 940, minWidth: 960, minHeight: 620, backgroundColor: colors.background, icon: path.join(__dirname, '../assets/icon.ico'), titleBarStyle: 'hidden', titleBarOverlay: colors.overlay, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   mainWindow.on('closed', () => { mainWindow = null; });
-  mainWindow.webContents.on('render-process-gone', (_event, details) => { if (details.reason !== 'clean-exit') showFatalError('Cutting Floor renderer stopped', details.reason); });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => { if (details.reason !== 'clean-exit') showFatalError('Vapormint renderer stopped', details.reason); });
   const loading = MAIN_WINDOW_VITE_DEV_SERVER_URL
     ? mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
     : mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
-  void loading.catch((error) => showFatalError('Cutting Floor could not open', error));
+  void loading.catch((error) => showFatalError('Vapormint could not open', error));
 }
 
-process.on('uncaughtException', (error) => { showFatalError('Cutting Floor encountered an unexpected error', error); app.quit(); });
-process.on('unhandledRejection', (error) => showFatalError('Cutting Floor could not complete an operation', error));
+process.on('uncaughtException', (error) => { showFatalError('Vapormint encountered an unexpected error', error); app.quit(); });
+process.on('unhandledRejection', (error) => showFatalError('Vapormint could not complete an operation', error));
 
 const hasInstanceLock = app.requestSingleInstanceLock();
 if (!hasInstanceLock) app.quit();
@@ -460,7 +477,9 @@ else void app.whenReady().then(async () => {
   ipcMain.handle('library:change', (_event, session: StudioSession, libraryPath: string) => changeLibrary(session, libraryPath));
   ipcMain.handle('location:choose', (_event, kind: 'libraryPath' | 'downloadPath' | 'exportPath', current: string) => chooseLocation(kind, current));
   ipcMain.handle('runtime:status', getRuntimeStatus);
-  ipcMain.handle('export:start', (_event, request: ExportRequest) => exportClip(request));
+  ipcMain.handle('export:start', async (_event, request: ExportRequest) => {
+    try { return await exportClip(request); } catch (e) { console.error('[export:start] FAILED', e); throw e; }
+  });
   ipcMain.handle('receipt:read', async (_event, receiptPath: string) => {
     try {
       return JSON.parse(await readFile(receiptPath, 'utf8'));
@@ -468,12 +487,56 @@ else void app.whenReady().then(async () => {
       return null;
     }
   });
-  ipcMain.handle('previewTune', (_event, request: ExportRequest, settings) => tunePreview(request, settings, new AbortController().signal, (percent, message) => { mainWindow?.webContents.send('previewTuneProgress', { percent, message }); }));
+  ipcMain.handle('previewTune', async (_event, request: ExportRequest, settings) => {
+    const prefs = await loadPreferences();
+    const safeRequest = request.exportRoot ? request : { ...request, exportRoot: prefs.exportPath };
+    console.log('[previewTune] exportRoot=', JSON.stringify(safeRequest.exportRoot), 'sourcePath=', JSON.stringify(safeRequest.source?.sourcePath));
+    try {
+      return await tunePreview(safeRequest, settings, new AbortController().signal, (percent, message) => { mainWindow?.webContents.send('previewTuneProgress', { percent, message }); });
+    } catch (e) { console.error('[previewTune] FAILED', e); throw e; }
+  });
   ipcMain.handle('task:cancel', () => { exportController?.abort(); taskController?.abort(); });
+
+  // ---- Updates ----
+  const sendUpdate = (info: UpdateInfo) => mainWindow?.webContents.send('update:progress', info);
+  autoUpdater.on('checking-for-update', () => sendUpdate({ status: 'downloading', version: app.getVersion(), message: 'Checking for updates…', percent: 0 }));
+  autoUpdater.on('update-available', (info) => sendUpdate({ status: 'available', version: info.version, message: `Version ${info.version} is available`, percent: 0 }));
+  autoUpdater.on('update-not-available', () => sendUpdate({ status: 'current', version: app.getVersion(), message: `You are on the latest version (${app.getVersion()})`, percent: 0 }));
+  autoUpdater.on('error', () => sendUpdate({ status: 'error', version: app.getVersion(), message: 'Update check failed', percent: 0 }));
+  autoUpdater.on('download-progress', (p) => sendUpdate({ status: 'downloading', version: app.getVersion(), message: `Downloading update… ${Math.round(p.percent)}%`, percent: p.percent }));
+  autoUpdater.on('update-downloaded', (info) => sendUpdate({ status: 'downloaded', version: info.version, message: `Version ${info.version} is ready — restart to install`, percent: 100 }));
+
+  ipcMain.handle('update:check', async () => {
+    try {
+      await autoUpdater.checkForUpdatesAndNotify();
+      return { status: 'current', version: app.getVersion(), message: 'Checked' };
+    } catch (e) {
+      return { status: 'error', version: app.getVersion(), message: String(e) };
+    }
+  });
+  ipcMain.handle('update:apply', () => {
+    autoUpdater.quitAndInstall();
+  });
+
+  // ---- Feedback ----
+  ipcMain.handle('feedback:submit', async (_event, report: FeedbackReport) => {
+    try {
+      const dir = app.getPath('userData');
+      const file = path.join(dir, `feedback-${report.createdAt.replace(/[:.]/g, '-')}.json`);
+      await writeFile(file, JSON.stringify(report, null, 2), 'utf8');
+      return { ok: true, message: 'Feedback saved. Thank you!' };
+    } catch (e) {
+      return { ok: false, message: `Could not save feedback: ${String(e)}` };
+    }
+  });
+  ipcMain.handle('feedback:open', async (_event, url: string) => {
+    await shell.openExternal(url);
+  });
+
   createWindow((await loadPreferences()).theme);
   app.on('second-instance', () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.show(); mainWindow?.focus(); });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void loadPreferences().then((preferences) => createWindow(preferences.theme)); });
-}).catch((error) => showFatalError('Cutting Floor could not start', error));
+}).catch((error) => showFatalError('Vapormint could not start', error));
 
 app.on('before-quit', stopBackgroundWork);
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

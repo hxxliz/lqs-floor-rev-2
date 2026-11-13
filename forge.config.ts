@@ -8,13 +8,13 @@ const certificatePassword = process.env.WINDOWS_CERTIFICATE_PASSWORD;
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    executableName: 'LQsCuttingFloor',
-    icon: 'assets/icon',
-    extraResource: ['./runtime'],
+    executableName: 'Vapormint',
+    icon: 'assets/icon.ico',
+    extraResource: ['./runtime', './scripts', './assets'],
   },
   makers: [new MakerSquirrel({
-    name: 'LQsCuttingFloor',
-    setupExe: 'LQsCuttingFloorSetup.exe',
+    name: 'Vapormint',
+    setupExe: 'VapormintSetup.exe',
     setupIcon: 'assets/icon.ico',
     ...(certificateFile && certificatePassword ? { certificateFile, certificatePassword } : {}),
   })],
