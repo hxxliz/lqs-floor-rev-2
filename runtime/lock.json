@@ -21,8 +21,9 @@
     "version": "9.0.1",
     "build": "n9.0.1-29-gad500d59cb-20260913",
     "license": "GPLv3",
-    "distribution": "BtbN full GPL static build (win64)",
-    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    "distribution": "BtbN full GPL static build (win64) — n9.0.1-29-gad500d59cb-20260913",
+    "url": "https://github.com/hxxliz/lqs-floor-rev-2/releases/download/v2.0.0/ffmpeg-n9.0.1-29-gad500d59cb-20260913-win64-mirror.zip",
+    "url_note": "We mirror the exact BtbN build as a release asset on OUR repo. BtbN's 'latest' tag is a moving target that drifts, and BtbN prunes old autobuild releases after ~2 weeks (the original Sept 2026 release is gone upstream). Pointing at our own asset makes the build bit-for-bit reproducible forever and immune to upstream pruning. The mirror zip contains ONLY the files the runtime ships (ffmpeg.exe, ffprobe.exe + the 7 av*/sw* DLLs), so it is 74 MB rather than the 192 MB full BtbN zip.",
     "binaries": ["ffmpeg.exe", "ffprobe.exe"],
     "shipped_dlls": [
       "avcodec-63.dll", "avdevice-63.dll", "avfilter-12.dll", "avformat-63.dll",

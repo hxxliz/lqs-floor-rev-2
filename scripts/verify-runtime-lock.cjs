@@ -28,7 +28,11 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const lockPath = path.join(root, 'runtime', 'lock.json');
-const rt = path.join(root, 'runtime', 'win32-x64');
+// Allow verifying a non-default runtime dir (e.g. the freshly-built one in
+// runtime-build/ before it's swapped in):  VAPORMINT_RUNTIME=<dir> node ...
+const rt = process.env.VAPORMINT_RUNTIME
+  ? (path.isAbsolute(process.env.VAPORMINT_RUNTIME) ? process.env.VAPORMINT_RUNTIME : path.join(root, process.env.VAPORMINT_RUNTIME))
+  : path.join(root, 'runtime', 'win32-x64');
 const sp = path.join(rt, 'Lib', 'site-packages');
 
 function fail(msg) { console.error(`\nerror: ${msg}`); process.exit(2); }

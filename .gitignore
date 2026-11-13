@@ -2,6 +2,7 @@ node_modules/
 .vite/
 out/
 dist/
+runtime-build/
 .superdesign/tmp/
 *.log
 .superdesign/tmp/

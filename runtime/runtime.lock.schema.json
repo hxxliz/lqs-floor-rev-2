@@ -29,6 +29,7 @@
         "license": { "type": "string" },
         "distribution": { "type": "string" },
         "url": { "type": "string", "format": "uri" },
+        "url_note": { "type": "string" },
         "binaries": { "type": "array", "items": { "type": "string" }, "minItems": 2 },
         "shipped_dlls": { "type": "array", "items": { "type": "string" } }
       }
