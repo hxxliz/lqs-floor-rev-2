@@ -41,6 +41,7 @@ import {
   type StudioLook,
   type StudioPreferences,
   type TaskProgress,
+  type UpdateInfo,
   type ViewName,
 } from './shared';
 
@@ -106,6 +107,9 @@ export default function App() {
   const [notice, setNotice] = useState<{ kind: 'error' | 'info'; message: string }>();
   const [undo, setUndo] = useState<{ session: StudioSession; selectedClipId?: string }>();
   const [saveState, setSaveState] = useState<SaveState>('saved');
+  // Update notify: set by the background check on launch and by any manual check.
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo>();
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const sessionRef = useRef<StudioSession | undefined>(undefined);
   const modal = useRef<HTMLElement | null>(null);
@@ -138,6 +142,18 @@ export default function App() {
     const stopWatch = window.cuttingFloor.onWatchSources((sources) => setSession((current) => current ? { ...current, sources: [...current.sources, ...sources.filter((source) => !current.sources.some((item) => item.sourcePath === source.sourcePath))] } : current));
     return () => { stopExport(); stopTask(); stopWatch(); };
   }, [reportError]);
+
+  // Update notify: once the app is open, quietly ask the GitHub Releases API whether
+  // a newer release exists. If one does, a banner appears (below the titlebar). The
+  // check is fire-and-forget; a failure (offline, etc.) is surfaced only if the user
+  // later clicks "Check for updates". We delay ~2.5s so the check doesn't compete
+  // with the initial workspace/runtime load for bandwidth and CPU.
+  useEffect(() => {
+    if (!loaded.current) return;
+    const stopUpdate = window.cuttingFloor.onUpdateProgress((info) => setUpdateInfo(info));
+    const timer = window.setTimeout(() => { void window.cuttingFloor.checkForUpdates(); }, 2500);
+    return () => { stopUpdate(); window.clearTimeout(timer); };
+  }, [loaded.current]);
 
   useEffect(() => {
     if (!session || !loaded.current || (!projects.length && !session.sources.length && !session.clips.length && session.name === 'Untitled Vapormint')) return;
@@ -567,8 +583,12 @@ export default function App() {
     <header className="titlebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <div className="wordmark"><img src={appIcon} alt="" /><span>VAPORMINT</span></div>
       <div className="project-name"><span className="status-dot" />{session.name}</div>
+      <button className="titlebar-check-update" title="Check the Vapormint release page for a newer version." onClick={() => { setUpdateDismissed(false); setUpdateInfo({ status: 'downloading', version: '', message: 'Checking for updates…', percent: 0 }); void window.cuttingFloor.checkForUpdates(); }}>↻ Check for updates</button>
       <div className="title-theme" role="group" aria-label="Appearance"><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void savePreferences({ ...preferences, theme: 'light' })}>Light</button><button aria-pressed={preferences.theme !== 'light'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void savePreferences({ ...preferences, theme: 'dark' })}>Dark</button></div>
     </header>
+
+    {updateInfo?.status === 'available' && !updateDismissed && <div className="update-banner" role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">✦</span><div className="update-banner-copy"><b>Version {updateInfo.version} is available</b><small>A new release of Vapormint is out — grab it from the release page.</small></div><button className="update-banner-cta" onClick={() => void window.cuttingFloor.applyUpdate()}>Get update</button><button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
+    {updateInfo?.status === 'error' && !updateDismissed && <div className="update-banner update-banner-error" role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">!</span><div className="update-banner-copy"><b>Update check failed</b><small>{updateInfo.message}</small></div><button className="update-banner-retry" onClick={() => { setUpdateDismissed(false); setUpdateInfo(undefined); void window.cuttingFloor.checkForUpdates(); }}>Retry</button><button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
 
     <aside className="sidebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <img className="rail-logo" src={appIcon} alt="Vapormint" />
